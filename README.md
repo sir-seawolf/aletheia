@@ -1,5 +1,17 @@
 # Aletheia
 
+## 🧭 What makes Aletheia different?
+
+Most AI systems try to give answers.
+
+Aletheia does something else:
+
+→ It reveals structure  
+→ It exposes uncertainty  
+→ It simulates consequences  
+
+It is designed for thinking, not responding.
+
 **Personal cognitive system for decision-making**
 
 Aletheia is a local-first cognitive system designed to help you think better, not faster.
@@ -50,6 +62,15 @@ Guardian → enforces risk rules
 Structured Response
 ```
 
+## 🧠 Cognitive Modes
+
+Aletheia adapts its behavior based on decision risk:
+
+- Low risk → exploratory, creative
+- Medium risk → structured reasoning
+- High risk → conservative, multi-scenario analysis
+
+The system does not behave the same in all contexts.
 ---
 
 ## ⚙️ Components
@@ -72,6 +93,17 @@ Structured Response
 - Local inference via **Ollama**
 - Optional cloud integration (future phase)
 
+## 🔬 Decision Flow
+
+1. Classify domain and risk
+2. Retrieve relevant memory
+3. Build contextual representation
+4. Simulate multiple scenarios
+5. Validate output based on risk rules
+6. Return structured insight
+
+No single-answer outputs in high-risk domains.
+
 ---
 
 ## 🔥 Current Features (MVP)
@@ -82,6 +114,16 @@ Structured Response
 - Local AI execution (Ollama)
 - Simple API endpoint for simulation
 
+## 🧠 Design Philosophy
+
+Aletheia is built on a simple idea:
+
+Clarity emerges when:
+- information is structured
+- contradictions are visible
+- assumptions are explicit
+
+The system is designed to expose, not to simplify.
 ---
 
 ## 🚀 Getting Started
@@ -184,7 +226,7 @@ Aletheia is designed as a local-first system.
 
 Aletheia comes from ancient Greek:
 
-“Truth as unveiling”
+"Truth as unveiling"
 
 This system is built around that idea:
 
@@ -220,4 +262,12 @@ Aletheia is an attempt to build something rare:
 
 A system where intelligence is not the goal —
 but clarity is.
+
+## 🧪 Quick demo
+
+Run:
+
+curl -X POST http://127.0.0.1:8000/simulate \
+-H "Content-Type: application/json" \
+-d '{ ... }'
 
