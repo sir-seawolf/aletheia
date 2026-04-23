@@ -1,7 +1,10 @@
 """El analista frío. Busca en memoria, selecciona lo relevante, detecta falta de datos."""
 
+import json
 from typing import Dict, Any, List
 from core.context import Context
+from ai.ollama_client import generate
+from ai.prompts import exploration_prompt
 
 
 def run(context: Context) -> Dict[str, Any]:
@@ -14,15 +17,18 @@ def run(context: Context) -> Dict[str, Any]:
     Returns:
         Estructura con facts, gaps y confidence
     """
+    # Intentar extracción con IA; fallback a lógica estructurada
+    ai_result = _try_extract_with_ai(context)
+    if ai_result:
+        return ai_result
+
+    # Fallback: análisis simple basado en palabras clave
     memory = context.memory
     question = context.question
     domain = context.domain
 
-    # MVP: análisis simple basado en palabras clave del dominio
-    # En el futuro esto usará retrieval con embeddings
     facts = _extract_relevant_facts(memory, domain, question)
     gaps = _detect_gaps(facts, context.risk)
-
     confidence = _calculate_confidence(facts, gaps)
 
     return {
@@ -32,9 +38,38 @@ def run(context: Context) -> Dict[str, Any]:
     }
 
 
+def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:
+    """Intenta extraer hechos usando Ollama. Devuelve None si falla."""
+    try:
+        prompt = exploration_prompt(context.to_dict())
+        response = generate(prompt, temperature=0.3)
+
+        if response.startswith("[ERROR]"):
+            return None
+
+        # Limpiar posible markdown
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        data = json.loads(cleaned)
+
+        return {
+            "facts": data.get("facts", []),
+            "gaps": data.get("gaps", []),
+            "confidence": data.get("confidence", 0.5),
+        }
+    except Exception:
+        return None
+
+
 def _extract_relevant_facts(memory: List[str], domain: str, question: str) -> List[str]:
-    """Extrae hechos relevantes de la memoria."""
-    # MVP: filtro simple por palabras clave
+    """Extrae hechos relevantes de la memoria (fallback por keywords)."""
     keywords = set(question.lower().split())
     keywords.add(domain.lower())
 

@@ -8,6 +8,14 @@ from core.orchestrator import process_request
 app = FastAPI(title="Aletheia", description="Personal cognitive system for decision-making")
 
 
+class RiskConfig(BaseModel):
+    """Configuración de riesgo tipada."""
+
+    level: str
+    require_scenarios: bool
+    require_guardian: bool
+
+
 class SimulationRequest(BaseModel):
     """Modelo de entrada para solicitudes de simulación."""
 
@@ -24,6 +32,7 @@ class SimulationResponse(BaseModel):
     risk: dict
     pipeline: dict
     final_output: dict
+    meta: dict
 
 
 @app.post("/simulate", response_model=SimulationResponse)
@@ -31,6 +40,7 @@ def simulate(request: SimulationRequest):
     """
     Endpoint principal para ejecutar una simulación cognitiva.
     """
+    print(f"[Aletheia] Domain: {request.domain} | Question: {request.question}")
     result = process_request(
         domain=request.domain,
         question=request.question,

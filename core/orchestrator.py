@@ -1,6 +1,7 @@
 """Director del sistema. Coordina agentes sin pensar ni responder directamente."""
 
-from typing import Dict, Any, List
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional
 from core.risk_engine import get_risk_config
 from core.context import Context
 from agents import explorer, simulator, guardian
@@ -12,12 +13,19 @@ PIPELINE_STEPS = [
     "validate",
 ]
 
+# Mapa dinámico de pasos a funciones ejecutables
+PIPELINE_MAP = {
+    "explore": explorer.run,
+    "simulate": simulator.run,
+    "validate": guardian.validate,
+}
+
 
 def process_request(
     domain: str,
     question: str,
     memory_data: List[str],
-    constraints: List[str] = None,
+    constraints: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Orquesta el flujo completo de procesamiento de una solicitud.
@@ -43,29 +51,47 @@ def process_request(
         constraints=constraints,
     )
 
-    # 3. Ejecutar pipeline
+    # 3. Ejecutar pipeline dinámicamente
     step_results = {}
+    steps_executed = []
 
-    # 3.1 Exploración
-    exploration = explorer.run(context)
-    step_results["explore"] = exploration
+    for step in PIPELINE_STEPS:
+        # Bypass de validate si no requiere guardian
+        if step == "validate" and not risk_config.get("require_guardian"):
+            step_results["validate"] = {
+                "valid": True,
+                "issues": [],
+                "corrected_output": step_results["simulate"],
+            }
+            steps_executed.append("validate (bypass)")
+            continue
 
-    # 3.2 Simulación (condicionada por riesgo)
-    simulation = simulator.run(context, exploration)
-    step_results["simulate"] = simulation
+        if step == "explore":
+            step_results["explore"] = PIPELINE_MAP[step](context)
+            steps_executed.append("explore")
 
-    # 3.3 Validación (solo si el riesgo lo requiere)
-    if risk_config.get("require_guardian", False):
-        validation = guardian.validate(simulation, risk_config)
-        step_results["validate"] = validation
-    else:
-        step_results["validate"] = {"valid": True, "issues": [], "corrected_output": simulation}
+        elif step == "simulate":
+            step_results["simulate"] = PIPELINE_MAP[step](
+                context, step_results["explore"]
+            )
+            steps_executed.append("simulate")
 
-    # 4. Construir respuesta final
+        elif step == "validate":
+            step_results["validate"] = PIPELINE_MAP[step](
+                step_results["simulate"], risk_config
+            )
+            steps_executed.append("validate")
+
+    # 4. Construir respuesta final con trazabilidad
     return {
         "domain": domain,
         "risk": risk_config,
         "pipeline": step_results,
         "final_output": step_results["validate"]["corrected_output"],
+        "meta": {
+            "steps_executed": steps_executed,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "0.2.0",
+        },
     }
 
