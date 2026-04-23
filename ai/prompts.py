@@ -59,6 +59,24 @@ Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adic
 """
 
 
+def scenario_description_prompt(question: str, facts: list, scenario_type: str) -> str:
+    """
+    Prompt para generar la descripción de un escenario específico usando Ollama.
+    """
+    return f"""Dado este contexto:
+- Pregunta: {question}
+- Hechos: {facts}
+
+Genera un escenario {scenario_type} realista.
+Incluye:
+- evolución probable
+- riesgos
+- condiciones necesarias
+
+Responde con un párrafo conciso y directo, sin markdown ni explicaciones adicionales.
+"""
+
+
 def validation_prompt(simulation: Dict[str, Any], risk_config: Dict[str, Any]) -> str:
     """
     Prompt para el agente Guardian.

@@ -106,7 +106,25 @@ def _generate_scenarios(
 
 
 def _build_scenario_description(context: Context, facts: list, scenario_type: str) -> str:
-    """Construye descripción de escenario (MVP: placeholder estructurado)."""
+    """Construye descripción de escenario usando Ollama con fallback estructurado."""
+    try:
+        from ai.prompts import scenario_description_prompt
+        from ai.ollama_client import generate
+
+        prompt = scenario_description_prompt(
+            question=context.question,
+            facts=facts,
+            scenario_type=scenario_type,
+        )
+        temperature = 0.3 if not context.risk.get("allow_creativity", True) else 0.7
+        response = generate(prompt, temperature=temperature)
+
+        if response and not response.startswith("[ERROR]"):
+            return response.strip()
+    except Exception:
+        pass
+
+    # Fallback: descripción estructurada básica
     base = f"Escenario {scenario_type} para: {context.question}"
     if facts:
         base += f" | Basado en {len(facts)} hechos"

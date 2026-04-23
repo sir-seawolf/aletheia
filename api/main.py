@@ -41,13 +41,20 @@ def simulate(request: SimulationRequest):
     Endpoint principal para ejecutar una simulación cognitiva.
     """
     print(f"[Aletheia] Domain: {request.domain} | Question: {request.question}")
+    # Si memory viene vacío, el orchestrator auto-recupera desde SQLite
     result = process_request(
         domain=request.domain,
         question=request.question,
-        memory_data=request.memory,
+        memory_data=request.memory if request.memory else None,
         constraints=request.constraints,
     )
     return result
+
+
+@app.get("/")
+def root():
+    """Información básica del sistema."""
+    return {"system": "Aletheia", "mode": "local-first cognitive engine"}
 
 
 @app.get("/health")

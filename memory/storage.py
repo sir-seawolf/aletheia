@@ -1,107 +1,112 @@
 """Almacenamiento simple en SQLite para memoria."""
 
 import sqlite3
-import json
 import os
-from typing import List, Optional
+from datetime import datetime
+from typing import List
 from memory.models import MemoryItem
 from config import MEMORY_DB_PATH
 
 
-def _get_connection() -> sqlite3.Connection:
-    """Obtiene conexión a la base de datos."""
+def init_db():
+    """Inicializa la tabla de memoria si no existe."""
     os.makedirs(os.path.dirname(MEMORY_DB_PATH), exist_ok=True)
     conn = sqlite3.connect(MEMORY_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT,
+        content TEXT,
+        domain TEXT,
+        confidence REAL,
+        created_at TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
 
 
-def _init_db():
-    """Inicializa la tabla si no existe."""
-    conn = _get_connection()
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS memory_items (
-            id TEXT PRIMARY KEY,
-            type TEXT NOT NULL,
-            content TEXT NOT NULL,
-            date TEXT NOT NULL,
-            confidence REAL DEFAULT 1.0,
-            source TEXT,
-            domain TEXT,
-            tags TEXT
+def save_memory(item: MemoryItem) -> int:
+    """Guarda un item en la base de datos y retorna su id."""
+    init_db()
+    conn = sqlite3.connect(MEMORY_DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO memory (type, content, domain, confidence, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    """, (
+        item.type,
+        item.content,
+        item.domain,
+        item.confidence,
+        item.created_at.isoformat(),
+    ))
+
+    conn.commit()
+    item_id = cursor.lastrowid
+    conn.close()
+    return item_id if item_id is not None else -1
+
+
+def get_by_domain(domain: str, limit: int = 20) -> List[MemoryItem]:
+    """Recupera los últimos items de memoria para un dominio dado."""
+    init_db()
+    conn = sqlite3.connect(MEMORY_DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT id, type, content, domain, confidence, created_at
+    FROM memory
+    WHERE domain = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+    """, (domain, limit))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        MemoryItem(
+            id=row[0],
+            type=row[1],
+            content=row[2],
+            domain=row[3],
+            confidence=row[4],
+            created_at=datetime.fromisoformat(row[5]),
         )
-        """
-    )
-    conn.commit()
+        for row in rows
+    ]
+
+
+def get_all(limit: int = 100) -> List[MemoryItem]:
+    """Recupera los últimos items de memoria sin filtrar por dominio."""
+    init_db()
+    conn = sqlite3.connect(MEMORY_DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT id, type, content, domain, confidence, created_at
+    FROM memory
+    ORDER BY created_at DESC
+    LIMIT ?
+    """, (limit,))
+
+    rows = cursor.fetchall()
     conn.close()
 
-
-def save(item: MemoryItem) -> str:
-    """Guarda un item en la base de datos."""
-    _init_db()
-    conn = _get_connection()
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO memory_items
-        (id, type, content, date, confidence, source, domain, tags)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            item.id,
-            item.type,
-            item.content,
-            item.date,
-            item.confidence,
-            item.source,
-            item.domain,
-            json.dumps(item.tags),
-        ),
-    )
-    conn.commit()
-    conn.close()
-    return item.id
-
-
-def get_all(domain: Optional[str] = None) -> List[MemoryItem]:
-    """Obtiene todos los items, opcionalmente filtrados por dominio."""
-    _init_db()
-    conn = _get_connection()
-
-    if domain:
-        rows = conn.execute(
-            "SELECT * FROM memory_items WHERE domain = ? ORDER BY date DESC",
-            (domain,),
-        ).fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM memory_items ORDER BY date DESC").fetchall()
-
-    conn.close()
-    return [_row_to_item(row) for row in rows]
-
-
-def search(query: str) -> List[MemoryItem]:
-    """Búsqueda simple por contenido."""
-    _init_db()
-    conn = _get_connection()
-    rows = conn.execute(
-        "SELECT * FROM memory_items WHERE content LIKE ? ORDER BY date DESC",
-        (f"%{query}%",),
-    ).fetchall()
-    conn.close()
-    return [_row_to_item(row) for row in rows]
-
-
-def _row_to_item(row: sqlite3.Row) -> MemoryItem:
-    """Convierte una fila de SQLite a MemoryItem."""
-    return MemoryItem(
-        id=row["id"],
-        type=row["type"],
-        content=row["content"],
-        date=row["date"],
-        confidence=row["confidence"],
-        source=row["source"],
-        domain=row["domain"],
-        tags=json.loads(row["tags"]) if row["tags"] else [],
-    )
+    return [
+        MemoryItem(
+            id=row[0],
+            type=row[1],
+            content=row[2],
+            domain=row[3],
+            confidence=row[4],
+            created_at=datetime.fromisoformat(row[5]),
+        )
+        for row in rows
+    ]
 
