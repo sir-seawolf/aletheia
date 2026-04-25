@@ -26,10 +26,11 @@ def run(context: Context) -> Dict[str, Any]:
     memory = context.memory
     question = context.question
     domain = context.domain
+    profile = context.user_profile
 
-    facts = _extract_relevant_facts(memory, domain, question)
-    gaps = _detect_gaps(facts, context.risk)
-    confidence = _calculate_confidence(facts, gaps)
+    facts = _extract_relevant_facts(memory, domain, question, profile)
+    gaps = _detect_gaps(facts, context.risk, profile)
+    confidence = _calculate_confidence(facts, gaps, profile)
 
     return {
         "facts": facts,
@@ -68,7 +69,12 @@ def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:
         return None
 
 
-def _extract_relevant_facts(memory: List[str], domain: str, question: str) -> List[str]:
+def _extract_relevant_facts(
+    memory: List[str],
+    domain: str,
+    question: str,
+    profile,
+) -> List[str]:
     """Extrae hechos relevantes de la memoria (fallback por keywords)."""
     keywords = set(question.lower().split())
     keywords.add(domain.lower())
@@ -79,16 +85,36 @@ def _extract_relevant_facts(memory: List[str], domain: str, question: str) -> Li
         if any(kw in item_lower for kw in keywords):
             relevant.append(item)
 
-    return relevant
+    # Ajuste por perfil
+    max_items = 5
+    if profile and getattr(profile, "verbosity_preference", None) == "alta":
+        max_items = 10
+
+    # Estilo cognitivo
+    if profile and getattr(profile, "cognitive_style", None) == "arborescente":
+        # diversidad (MVP: mantener orden original)
+        return relevant[:max_items]
+    else:
+        # linealidad → orden temporal aproximado (por ahora orden natural)
+        return relevant[:max_items]
 
 
-def _detect_gaps(facts: List[str], risk_config: Dict[str, Any]) -> List[str]:
+def _detect_gaps(
+    facts: List[str],
+    risk_config: Dict[str, Any],
+    profile,
+) -> List[str]:
     """Detecta información faltante basada en el nivel de riesgo."""
     gaps = []
     min_evidence = risk_config.get("min_evidence", 0)
 
     if len(facts) < min_evidence:
         gaps.append(f"Se requieren al menos {min_evidence} datos relevantes. Encontrados: {len(facts)}")
+
+    # Gap cognitivo (MUY diferencial)
+    if profile and getattr(profile, "abstraction_tolerance", None) == "alta":
+        if len(facts) < 3:
+            gaps.append("Falta profundidad estructural para análisis complejo")
 
     # Gaps específicos por dominio (MVP básico)
     if risk_config.get("level") == "high":
@@ -98,10 +124,21 @@ def _detect_gaps(facts: List[str], risk_config: Dict[str, Any]) -> List[str]:
     return gaps
 
 
-def _calculate_confidence(facts: List[str], gaps: List[str]) -> float:
+def _calculate_confidence(
+    facts: List[str],
+    gaps: List[str],
+    profile,
+) -> float:
     """Calcula nivel de confianza en la exploración."""
     base = 0.7
     fact_boost = min(len(facts) * 0.1, 0.2)
     gap_penalty = min(len(gaps) * 0.15, 0.3)
-    return round(max(0.0, min(1.0, base + fact_boost - gap_penalty)), 2)
+
+    confidence = base + fact_boost - gap_penalty
+
+    # ajuste cognitivo
+    if profile and getattr(profile, "cognitive_style", None) == "arborescente":
+        confidence += 0.05  # tolera incertidumbre
+
+    return round(max(0.0, min(1.0, confidence)), 2)
 
