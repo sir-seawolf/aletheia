@@ -1,14 +1,24 @@
 """Director del sistema. Coordina agentes sin pensar ni responder directamente."""
 
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Sequence, Union
 from uuid import uuid4
 from core.risk_engine import get_risk_config
 from core.context import Context
 from core.event_bus import build_event, emit_event
 from agents import explorer, simulator, guardian
-from memory.service import retrieve_context, store_event, get_or_create_profile, store_preference
-from memory.models import UserProfile
+from memory.service import (
+    retrieve_context,
+    retrieve_context_nodes,
+    store_event,
+    get_or_create_profile,
+    store_preference,
+)
+from memory.models import UserProfile, MemoryNode
+from feedback.service import apply_learning
+import concurrent.futures
+import functools
+from feedback.models import FeedbackSignal
 
 # Pipeline explícito de pasos
 PIPELINE_STEPS = [
@@ -38,10 +48,42 @@ SIMULATION_SCHEMA = {
 }
 
 
+def _emit_state_snapshot(
+    session_id: str,
+    domain: str,
+    question: str,
+    stage: str,
+    active_agents: List[str],
+    risk_level: str,
+    confidence: float,
+) -> None:
+    """Emite snapshot cognitivo global para observabilidad de estado."""
+    emit_event(
+        build_event(
+            session_id=session_id,
+            agent="orchestrator",
+            stage=stage,
+            event_type="state_snapshot",
+            payload={
+                "type": "state_snapshot",
+                "context": {
+                    "domain": domain,
+                    "question_preview": question[:120],
+                    "stage": stage,
+                },
+                "active_agents": active_agents,
+                "risk": risk_level,
+                "confidence": confidence,
+            },
+            confidence=confidence,
+        )
+    )
+
+
 def process_request(
     domain: str,
     question: str,
-    memory_data: Optional[List[str]] = None,
+    memory_data: Optional[Sequence[Union[MemoryNode, str]]] = None,
     constraints: Optional[List[str]] = None,
     user_profile: Optional[UserProfile] = None,
     session_id: Optional[str] = None,
@@ -78,7 +120,7 @@ def process_request(
 
     # 2. Auto-recuperar memoria si no se provee
     if memory_data is None:
-        memory_data = retrieve_context(domain)
+        memory_data = retrieve_context_nodes(domain)
 
     # 3. Resolver perfil: si no viene explícito, intentar recuperar de memoria
     if user_profile is None:
@@ -110,6 +152,25 @@ def process_request(
         )
     )
 
+    _emit_state_snapshot(
+        session_id=session_id,
+        domain=domain,
+        question=question,
+        stage="pipeline_started",
+        active_agents=["orchestrator"],
+        risk_level=risk_config.get("level", "medium"),
+        confidence=1.0,
+    )
+
+    def timeout_wrapper(func, *args, timeout=30.0, **kwargs):
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                result = future.result(timeout=timeout)
+                return result
+            except concurrent.futures.TimeoutError:
+                raise Exception(f"Timeout after {timeout}s in step '{step}'")
+
     for step in PIPELINE_STEPS:
         try:
             # Bypass de validate si no requiere guardian
@@ -117,7 +178,7 @@ def process_request(
                 step_results["validate"] = {
                     "valid": True,
                     "issues": [],
-                    "corrected_output": step_results["simulate"],
+                    "corrected_output": step_results.get("simulate", {}),
                 }
                 steps_executed.append("validate (bypass)")
                 emit_event(
@@ -132,6 +193,8 @@ def process_request(
                 )
                 continue
 
+            agent_func = PIPELINE_MAP[step]
+
             if step == "explore":
                 emit_event(
                     build_event(
@@ -143,8 +206,19 @@ def process_request(
                         confidence=0.0,
                     )
                 )
-                step_results["explore"] = PIPELINE_MAP[step](context, session_id=session_id)
+                step_results["explore"] = timeout_wrapper(
+                    agent_func, context, session_id=session_id
+                )
                 steps_executed.append("explore")
+                _emit_state_snapshot(
+                    session_id=session_id,
+                    domain=domain,
+                    question=question,
+                    stage="post_explorer",
+                    active_agents=["orchestrator", "explorer"],
+                    risk_level=risk_config.get("level", "medium"),
+                    confidence=step_results["explore"].get("confidence", 0.6),
+                )
 
             elif step == "simulate":
                 emit_event(
@@ -157,10 +231,19 @@ def process_request(
                         confidence=0.0,
                     )
                 )
-                step_results["simulate"] = PIPELINE_MAP[step](
-                    context, step_results["explore"], session_id=session_id
+                step_results["simulate"] = timeout_wrapper(
+                    agent_func, context, step_results["explore"], session_id=session_id
                 )
                 steps_executed.append("simulate")
+                _emit_state_snapshot(
+                    session_id=session_id,
+                    domain=domain,
+                    question=question,
+                    stage="post_simulator",
+                    active_agents=["orchestrator", "simulator"],
+                    risk_level=risk_config.get("level", "medium"),
+                    confidence=0.7,
+                )
 
             elif step == "validate":
                 emit_event(
@@ -173,22 +256,48 @@ def process_request(
                         confidence=0.0,
                     )
                 )
-                step_results["validate"] = PIPELINE_MAP[step](
-                    step_results["simulate"], risk_config, session_id=session_id
+                step_results["validate"] = timeout_wrapper(
+                    agent_func, step_results["simulate"], risk_config, session_id=session_id
                 )
                 steps_executed.append("validate")
+                _emit_state_snapshot(
+                    session_id=session_id,
+                    domain=domain,
+                    question=question,
+                    stage="post_guardian",
+                    active_agents=["orchestrator", "guardian"],
+                    risk_level=risk_config.get("level", "medium"),
+                    confidence=1.0 if step_results["validate"].get("valid", False) else 0.5,
+                )
         except Exception as e:
+            error_msg = f"Step '{step}' failed: {str(e)}"
             emit_event(
                 build_event(
                     session_id=session_id,
                     agent=step,
                     stage="blocked",
                     event_type="error",
-                    payload={"error": str(e)},
+                    payload={"error": error_msg},
                     confidence=0.0,
                 )
             )
-            raise
+            # Graceful fallback
+            if step == "explore":
+                step_results["explore"] = {"facts": [], "gaps": ["Agent timeout/error"], "confidence": 0.0}
+            elif step == "simulate":
+                step_results["simulate"] = {"scenarios": [], "risks": ["Simulation failed"], "assumptions": []}
+            elif step == "validate":
+                step_results["validate"] = {"valid": False, "issues": [error_msg], "corrected_output": step_results.get("simulate", {})}
+            steps_executed.append(f"{step} (failed)")
+            _emit_state_snapshot(
+                session_id=session_id,
+                domain=domain,
+                question=question,
+                stage=f"post_{step}_failed",
+                active_agents=["orchestrator"],
+                risk_level="high",
+                confidence=0.3,
+            )
 
     # 6. Guardar evento en memoria para trazabilidad
     try:
@@ -196,6 +305,29 @@ def process_request(
     except Exception:
         # Fallo silencioso: no bloquear respuesta por error de memoria
         pass
+
+    # 6.1 Aplicar aprendizaje básico a partir de señales internas de ejecución
+    feedback_signals: List[FeedbackSignal] = []
+    if step_results.get("validate", {}).get("issues"):
+        feedback_signals.append(
+            FeedbackSignal(
+                signal_type="confusing",
+                source="implicit",
+                confidence=0.6,
+                context={"issues": step_results["validate"].get("issues", [])},
+            )
+        )
+    if len(step_results.get("explore", {}).get("gaps", [])) >= 2:
+        feedback_signals.append(
+            FeedbackSignal(
+                signal_type="missed_key_info",
+                source="implicit",
+                confidence=0.55,
+                context={"gaps_count": len(step_results["explore"].get("gaps", []))},
+            )
+        )
+
+    learned_adjustments = apply_learning(feedback_signals, allow_single_shot=True)
 
     emit_event(
         build_event(
@@ -208,6 +340,16 @@ def process_request(
         )
     )
 
+    _emit_state_snapshot(
+        session_id=session_id,
+        domain=domain,
+        question=question,
+        stage="done",
+        active_agents=["orchestrator"],
+        risk_level=risk_config.get("level", "medium"),
+        confidence=1.0,
+    )
+
     # 7. Construir trace cognitivo
     interaction_id = str(uuid4())
     cognitive_trace = _build_cognitive_trace(
@@ -218,6 +360,7 @@ def process_request(
         risk_config=risk_config,
         step_results=step_results,
         steps_executed=steps_executed,
+        learned_adjustments=learned_adjustments,
     )
 
     # 8. Construir respuesta final con trazabilidad
@@ -225,7 +368,7 @@ def process_request(
         "domain": domain,
         "risk": risk_config,
         "pipeline": step_results,
-        "final_output": step_results["validate"]["corrected_output"],
+        "final_output": step_results["validate"].get("corrected_output", {"error": "Pipeline partially failed, check trace"}) if "validate" in step_results else {"error": "Pipeline failed early"},
         "meta": {
             "interaction_id": interaction_id,
             "steps_executed": steps_executed,
@@ -244,6 +387,7 @@ def _build_cognitive_trace(
     risk_config: Dict[str, Any],
     step_results: Dict[str, Any],
     steps_executed: List[str],
+    learned_adjustments: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """Construye el trace cognitivo completo del proceso de pensamiento."""
     explore = step_results.get("explore", {})
@@ -340,5 +484,15 @@ def _build_cognitive_trace(
             "agent_tuning": {
                 "simulator_temperature": 0.3 if not risk_config.get("allow_creativity") else 0.7,
             },
+            "learning_adjustments": [
+                {
+                    "component": a.component,
+                    "change_description": a.change_description,
+                    "change_value": a.change_value,
+                    "reversible": a.reversible,
+                    "reason": a.reason,
+                }
+                for a in (learned_adjustments or [])
+            ],
         },
     }
