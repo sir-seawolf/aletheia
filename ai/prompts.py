@@ -1,7 +1,38 @@
 """Prompts especializados por función para Aletheia."""
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from memory.models import UserProfile
+
+
+def _build_profile_instructions(profile: Optional[UserProfile]) -> str:
+    """Construye las instrucciones de adaptación según el perfil cognitivo."""
+    if not profile:
+        return ""
+
+    instructions = []
+
+    # Control de densidad
+    if profile.verbosity_preference == "baja":
+        instructions.append("Máximo 3 líneas por escenario. Sé extremadamente conciso.")
+    elif profile.verbosity_preference == "alta":
+        instructions.append("Desarrolla cada escenario con el detalle necesario. Sé exhaustivo.")
+    else:
+        instructions.append("Desarrolla cada escenario con el detalle necesario.")
+
+    # Control de estructura
+    if profile.structure_preference == "sistémica":
+        instructions.append("Usa listas, bullets y estructura jerárquica clara.")
+    elif profile.structure_preference == "narrativa":
+        instructions.append("Usa párrafos narrativos fluidos. Evita listas.")
+
+    # Control de abstracción
+    if profile.abstraction_capacity == "alta":
+        instructions.append("Evita explicaciones básicas. Prioriza conceptos abstractos y modelos.")
+    elif profile.abstraction_capacity == "baja":
+        instructions.append("Explica paso a paso con ejemplos concretos.")
+
+    return "\n".join(instructions)
 
 
 def exploration_prompt(context: Dict[str, Any]) -> str:
@@ -9,6 +40,9 @@ def exploration_prompt(context: Dict[str, Any]) -> str:
     Prompt para el agente Explorer.
     Extrae hechos relevantes de la memoria.
     """
+    profile = context.get("user_profile")
+    profile_instructions = _build_profile_instructions(profile)
+
     return f"""Eres un analista frío y preciso. Tu trabajo es extraer hechos relevantes.
 
 Dominio: {context.get('domain', 'general')}
@@ -19,6 +53,7 @@ Instrucciones:
 1. Identifica los hechos más relevantes para la pregunta
 2. Señala qué información falta
 3. No interpretes, no opines, solo reporta
+{profile_instructions}
 
 Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
 {{"facts": ["hecho 1", "hecho 2"], "gaps": ["información faltante"], "confidence": 0.8}}
@@ -32,6 +67,8 @@ def simulation_prompt(context: Dict[str, Any], exploration: Dict[str, Any]) -> s
     """
     risk_level = context.get('risk', {}).get('level', 'low')
     require_scenarios = context.get('risk', {}).get('require_scenarios', False)
+    profile = context.get("user_profile")
+    profile_instructions = _build_profile_instructions(profile)
 
     scenario_instruction = (
         "Genera al menos 2 escenarios: conservador y optimista."
@@ -53,16 +90,19 @@ Instrucciones:
 3. Lista los supuestos explícitos que haces
 4. Identifica riesgos clave
 5. No des una sola respuesta, explora posibilidades
+{profile_instructions}
 
 Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
 {{"scenarios": [{{"type": "conservative", "description": "...", "confidence": 0.6, "time_horizon": "9 meses"}}], "risks": ["riesgo 1"], "assumptions": ["supuesto 1"]}}
 """
 
 
-def scenario_description_prompt(question: str, facts: list, scenario_type: str) -> str:
+def scenario_description_prompt(question: str, facts: list, scenario_type: str, profile: Optional[UserProfile] = None) -> str:
     """
     Prompt para generar la descripción de un escenario específico usando Ollama.
     """
+    profile_instructions = _build_profile_instructions(profile)
+
     return f"""Dado este contexto:
 - Pregunta: {question}
 - Hechos: {facts}
@@ -72,6 +112,7 @@ Incluye:
 - evolución probable
 - riesgos
 - condiciones necesarias
+{profile_instructions}
 
 Responde con un párrafo conciso y directo, sin markdown ni explicaciones adicionales.
 """

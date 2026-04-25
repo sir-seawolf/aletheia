@@ -271,3 +271,46 @@ curl -X POST http://127.0.0.1:8000/simulate \
 -H "Content-Type: application/json" \
 -d '{ ... }'
 
+---
+
+## 🛠️ Minimal Run Instructions (Backend + UI MVP)
+
+### Backend (FastAPI)
+From project root:
+
+```bash
+python run.py
+```
+
+Backend URLs:
+- API: `http://127.0.0.1:8000`
+- Docs: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health`
+
+### Frontend (React MVP)
+In a second terminal:
+
+```bash
+cd aletheia-ui
+npm start
+```
+
+Frontend URL:
+- `http://localhost:3000`
+
+### Cognitive live flow (MVP)
+1. Open UI in browser.
+2. Write a question (single-screen input).
+3. Click **Simular**.
+4. UI sends `POST /simulate`.
+5. UI listens to `ws://127.0.0.1:8000/stream/{session_id}` for live events.
+6. Final output appears in JSON panel.
+
+### Minimal API payload for `/simulate`
+```json
+{
+  "domain": "finanzas",
+  "question": "¿Puedo dejar mi trabajo en 9 meses?"
+}
+```
+

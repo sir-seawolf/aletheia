@@ -3,11 +3,12 @@
 import json
 from typing import Dict, Any, List
 from core.context import Context
+from core.event_bus import build_event, emit_event
 from ai.ollama_client import generate
 from ai.prompts import exploration_prompt
 
 
-def run(context: Context) -> Dict[str, Any]:
+def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
     """
     Explora la memoria y el contexto para extraer hechos relevantes.
 
@@ -17,9 +18,33 @@ def run(context: Context) -> Dict[str, Any]:
     Returns:
         Estructura con facts, gaps y confidence
     """
+    emit_event(
+        build_event(
+            session_id=session_id,
+            agent="explorer",
+            stage="thinking",
+            event_type="searching_memory",
+            payload={"domain": context.domain},
+            confidence=0.0,
+        )
+    )
+
     # Intentar extracción con IA; fallback a lógica estructurada
     ai_result = _try_extract_with_ai(context)
     if ai_result:
+        emit_event(
+            build_event(
+                session_id=session_id,
+                agent="explorer",
+                stage="done",
+                event_type="facts_extracted",
+                payload={
+                    "facts": ai_result.get("facts", []),
+                    "gaps": ai_result.get("gaps", []),
+                },
+                confidence=float(ai_result.get("confidence", 0.0)),
+            )
+        )
         return ai_result
 
     # Fallback: análisis simple basado en palabras clave
@@ -32,11 +57,24 @@ def run(context: Context) -> Dict[str, Any]:
     gaps = _detect_gaps(facts, context.risk, profile)
     confidence = _calculate_confidence(facts, gaps, profile)
 
-    return {
+    result = {
         "facts": facts,
         "gaps": gaps,
         "confidence": confidence,
     }
+
+    emit_event(
+        build_event(
+            session_id=session_id,
+            agent="explorer",
+            stage="done",
+            event_type="facts_extracted",
+            payload={"facts": facts, "gaps": gaps},
+            confidence=confidence,
+        )
+    )
+
+    return result
 
 
 def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:

@@ -3,11 +3,12 @@
 import json
 from typing import Dict, Any
 from core.context import Context
+from core.event_bus import build_event, emit_event
 from ai.ollama_client import generate
 from ai.prompts import simulation_prompt
 
 
-def run(context: Context, exploration: Dict[str, Any]) -> Dict[str, Any]:
+def run(context: Context, exploration: Dict[str, Any], session_id: str = "local") -> Dict[str, Any]:
     """
     Genera escenarios basados en el contexto y la exploración.
 
@@ -18,13 +19,39 @@ def run(context: Context, exploration: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Estructura con scenarios, risks y assumptions
     """
+    emit_event(
+        build_event(
+            session_id=session_id,
+            agent="simulator",
+            stage="thinking",
+            event_type="generating_scenarios",
+            payload={"domain": context.domain},
+            confidence=0.0,
+        )
+    )
+
     risk_config = context.risk
     facts = exploration.get("facts", [])
     gaps = exploration.get("gaps", [])
 
+    # Adaptar temperatura según perfil cognitivo
+    base_temperature = 0.3 if not risk_config.get("allow_creativity", True) else 0.7
+    if context.user_profile and context.user_profile.abstraction_capacity == "alta":
+        base_temperature = min(base_temperature + 0.1, 1.0)
+
     # Intentar generación con IA; fallback a lógica estructurada
-    ai_result = _try_generate_with_ai(context, exploration)
+    ai_result = _try_generate_with_ai(context, exploration, temperature=base_temperature)
     if ai_result:
+        emit_event(
+            build_event(
+                session_id=session_id,
+                agent="simulator",
+                stage="done",
+                event_type="scenarios_generated",
+                payload={"scenarios": ai_result.get("scenarios", [])},
+                confidence=0.7,
+            )
+        )
         return ai_result
 
     # Fallback: lógica estructurada original
@@ -32,18 +59,32 @@ def run(context: Context, exploration: Dict[str, Any]) -> Dict[str, Any]:
     assumptions = _build_assumptions(facts, gaps)
     risks = _identify_risks(context, scenarios)
 
-    return {
+    result = {
         "scenarios": scenarios,
         "risks": risks,
         "assumptions": assumptions,
     }
 
+    emit_event(
+        build_event(
+            session_id=session_id,
+            agent="simulator",
+            stage="done",
+            event_type="scenarios_generated",
+            payload={"scenarios": scenarios},
+            confidence=0.6,
+        )
+    )
 
-def _try_generate_with_ai(context: Context, exploration: Dict[str, Any]) -> Dict[str, Any] | None:
+    return result
+
+
+def _try_generate_with_ai(context: Context, exploration: Dict[str, Any], temperature: float | None = None) -> Dict[str, Any] | None:
     """Intenta generar escenarios usando Ollama. Devuelve None si falla."""
     try:
         prompt = simulation_prompt(context.to_dict(), exploration)
-        temperature = 0.3 if not context.risk.get("allow_creativity", True) else 0.7
+        if temperature is None:
+            temperature = 0.3 if not context.risk.get("allow_creativity", True) else 0.7
         response = generate(prompt, temperature=temperature)
 
         if response.startswith("[ERROR]"):
@@ -106,7 +147,8 @@ def _generate_scenarios(
 
 
 def _build_scenario_description(context: Context, facts: list, scenario_type: str) -> str:
-    """Construye descripción de escenario usando Ollama con fallback estructurado."""
+    """Construye descripción de escenario usando Ollama con fallback adaptativo al perfil."""
+    # 1. Intento con IA primero
     try:
         from ai.prompts import scenario_description_prompt
         from ai.ollama_client import generate
@@ -115,6 +157,7 @@ def _build_scenario_description(context: Context, facts: list, scenario_type: st
             question=context.question,
             facts=facts,
             scenario_type=scenario_type,
+            profile=context.user_profile,
         )
         temperature = 0.3 if not context.risk.get("allow_creativity", True) else 0.7
         response = generate(prompt, temperature=temperature)
@@ -124,11 +167,43 @@ def _build_scenario_description(context: Context, facts: list, scenario_type: st
     except Exception:
         pass
 
-    # Fallback: descripción estructurada básica
-    base = f"Escenario {scenario_type} para: {context.question}"
-    if facts:
-        base += f" | Basado en {len(facts)} hechos"
-    return base
+    # 2. Fallback adaptativo al perfil cognitivo (sin IA)
+    profile = context.user_profile
+    structure = getattr(profile, "structure_preference", "sistémica") if profile else "sistémica"
+    verbosity = getattr(profile, "verbosity_preference", "media") if profile else "media"
+
+    if structure == "narrativa":
+        description = (
+            f"Escenario {scenario_type}:\n\n"
+            f"Situación:\n{context.question}\n\n"
+            f"Interpretación:\n"
+            f"Basado en los datos disponibles, este escenario considera "
+        )
+        if facts:
+            description += f"{len(facts)} hechos relevantes. "
+        else:
+            description += "la situación actual sin datos adicionales. "
+        description += (
+            f"\n\nImplicaciones:\n"
+            f"Las consecuencias de este escenario dependen de cómo evolucionen las condiciones."
+        )
+    else:
+        # Estructura sistémica (por defecto)
+        description = f"Escenario {scenario_type} para: {context.question}"
+        if facts:
+            description += f" | Basado en {len(facts)} hechos"
+
+    # Ajuste de densidad
+    if verbosity == "alta":
+        description += (
+            " Se desarrollan más detalles y posibles implicaciones. "
+            "Incluye análisis extendido de variables clave, escenarios secundarios "
+            "y recomendaciones de contingencia."
+        )
+    elif verbosity == "baja":
+        description += " Resumen conciso."
+
+    return description.strip()
 
 
 def _build_assumptions(facts: list, gaps: list) -> list:

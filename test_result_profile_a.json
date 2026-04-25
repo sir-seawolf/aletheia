@@ -1,0 +1,109 @@
+{
+  "domain": "finanzas",
+  "risk": {
+    "level": "high",
+    "require_scenarios": true,
+    "allow_creativity": false,
+    "min_evidence": 2,
+    "require_guardian": true
+  },
+  "pipeline": {
+    "explore": {
+      "facts": [
+        "Gastos mensuales: 1200€"
+      ],
+      "gaps": [
+        "Se requieren al menos 2 datos relevantes. Encontrados: 1",
+        "Falta información temporal para análisis de alto riesgo"
+      ],
+      "confidence": 0.5
+    },
+    "simulate": {
+      "scenarios": [
+        {
+          "type": "conservative",
+          "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+          "confidence": 0.6,
+          "time_horizon": "9 meses"
+        },
+        {
+          "type": "optimistic",
+          "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+          "confidence": 0.5,
+          "time_horizon": "9 meses"
+        }
+      ],
+      "risks": [
+        "Decisión de alto impacto en dominio finanzas: recomendable validar con asesoramiento humano"
+      ],
+      "assumptions": [
+        "Se asume que los 1 hechos son precisos y actuales",
+        "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+        "Se opera sin: Falta información temporal para análisis de alto riesgo"
+      ]
+    },
+    "validate": {
+      "valid": true,
+      "issues": [],
+      "corrected_output": {
+        "scenarios": [
+          {
+            "type": "conservative",
+            "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+            "confidence": 0.6,
+            "time_horizon": "9 meses"
+          },
+          {
+            "type": "optimistic",
+            "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+            "confidence": 0.5,
+            "time_horizon": "9 meses"
+          }
+        ],
+        "risks": [
+          "Decisión de alto impacto en dominio finanzas: recomendable validar con asesoramiento humano"
+        ],
+        "assumptions": [
+          "Se asume que los 1 hechos son precisos y actuales",
+          "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+          "Se opera sin: Falta información temporal para análisis de alto riesgo"
+        ],
+        "validated": true
+      }
+    }
+  },
+  "final_output": {
+    "scenarios": [
+      {
+        "type": "conservative",
+        "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+        "confidence": 0.6,
+        "time_horizon": "9 meses"
+      },
+      {
+        "type": "optimistic",
+        "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+        "confidence": 0.5,
+        "time_horizon": "9 meses"
+      }
+    ],
+    "risks": [
+      "Decisión de alto impacto en dominio finanzas: recomendable validar con asesoramiento humano"
+    ],
+    "assumptions": [
+      "Se asume que los 1 hechos son precisos y actuales",
+      "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+      "Se opera sin: Falta información temporal para análisis de alto riesgo"
+    ],
+    "validated": true
+  },
+  "meta": {
+    "steps_executed": [
+      "explore",
+      "simulate",
+      "validate"
+    ],
+    "timestamp": "2026-04-25T12:34:22.311887+00:00",
+    "version": "0.3.0"
+  }
+}
