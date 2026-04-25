@@ -20,12 +20,8 @@ Instrucciones:
 2. Señala qué información falta
 3. No interpretes, no opines, solo reporta
 
-Responde en formato JSON:
-{{
-  "facts": ["hecho 1", "hecho 2"],
-  "gaps": ["información faltante"],
-  "confidence": 0.8
-}}
+Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
+{{"facts": ["hecho 1", "hecho 2"], "gaps": ["información faltante"], "confidence": 0.8}}
 """
 
 
@@ -40,7 +36,7 @@ def simulation_prompt(context: Dict[str, Any], exploration: Dict[str, Any]) -> s
     scenario_instruction = (
         "Genera al menos 2 escenarios: conservador y optimista."
         if require_scenarios
-        else "Genera un análisis exploratorio."
+        else "Genera un análisis exploratorio con un único escenario."
     )
 
     return f"""Eres un simulador estratégico. Tu trabajo es generar escenarios futuros.
@@ -53,19 +49,31 @@ Nivel de riesgo: {risk_level}
 
 Instrucciones:
 1. {scenario_instruction}
-2. Lista los supuestos explícitos que haces
-3. Identifica riesgos clave
-4. No des una sola respuesta, explora posibilidades
+2. Para cada escenario, incluye: descripción detallada, confidence (0.0 a 1.0) y time_horizon (ej: "3 meses", "1 año")
+3. Lista los supuestos explícitos que haces
+4. Identifica riesgos clave
+5. No des una sola respuesta, explora posibilidades
 
-Responde en formato JSON:
-{{
-  "scenarios": [
-    {{"type": "conservative", "description": "..."}},
-    {{"type": "optimistic", "description": "..."}}
-  ],
-  "risks": ["riesgo 1", "riesgo 2"],
-  "assumptions": ["supuesto 1", "supuesto 2"]
-}}
+Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
+{{"scenarios": [{{"type": "conservative", "description": "...", "confidence": 0.6, "time_horizon": "9 meses"}}], "risks": ["riesgo 1"], "assumptions": ["supuesto 1"]}}
+"""
+
+
+def scenario_description_prompt(question: str, facts: list, scenario_type: str) -> str:
+    """
+    Prompt para generar la descripción de un escenario específico usando Ollama.
+    """
+    return f"""Dado este contexto:
+- Pregunta: {question}
+- Hechos: {facts}
+
+Genera un escenario {scenario_type} realista.
+Incluye:
+- evolución probable
+- riesgos
+- condiciones necesarias
+
+Responde con un párrafo conciso y directo, sin markdown ni explicaciones adicionales.
 """
 
 
@@ -88,11 +96,7 @@ Instrucciones:
 2. Señala problemas específicos
 3. Si es válido, confirma. Si no, indica qué falta
 
-Responde en formato JSON:
-{{
-  "valid": true,
-  "issues": [],
-  "corrected_output": {{...}}
-}}
+Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
+{{"valid": true, "issues": [], "corrected_output": {{...}}}}
 """
 

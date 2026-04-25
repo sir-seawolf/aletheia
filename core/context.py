@@ -29,6 +29,12 @@ class Context:
             "constraints": self.constraints,
         }
 
+    def summary(self) -> str:
+        """Retorna una línea de resumen del contexto para debugging rápido."""
+        risk_level = self.risk.get("level", "unknown")
+        mem_count = len(self.memory)
+        return f"[Aletheia] domain={self.domain} | risk={risk_level} | memory={mem_count} | q={self.question[:40]}..."
+
     @classmethod
     def from_request(
         cls,

@@ -1,50 +1,31 @@
 """Modelos de datos para el sistema de memoria."""
 
 from dataclasses import dataclass, field
-from typing import Optional, List
 from datetime import datetime
-import uuid
+from typing import Optional, List
 
 
 @dataclass
 class MemoryItem:
     """Un item de memoria estructurado."""
 
+    type: str            # fact | idea | goal | event
     content: str
-    type: str = "fact"  # fact, idea, goal, event, note
-    domain: Optional[str] = None
-    source: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
-    confidence: float = 1.0
-    date: Optional[str] = None
-    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    domain: str
+    confidence: float
+    created_at: datetime
+    id: Optional[int] = None
 
-    def __post_init__(self):
-        if self.date is None:
-            self.date = datetime.now().isoformat()
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "type": self.type,
-            "content": self.content,
-            "date": self.date,
-            "confidence": self.confidence,
-            "source": self.source,
-            "domain": self.domain,
-            "tags": self.tags,
-        }
+@dataclass
+class UserProfile:
+    """Perfil cognitivo del usuario. Tercera dimensión del sistema."""
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "MemoryItem":
-        return cls(
-            id=data.get("id", str(uuid.uuid4())[:8]),
-            type=data.get("type", "fact"),
-            content=data["content"],
-            date=data.get("date"),
-            confidence=data.get("confidence", 1.0),
-            source=data.get("source"),
-            domain=data.get("domain"),
-            tags=data.get("tags", []),
-        )
+    verbosity_preference: str = "media"      # baja | media | alta
+    structure_preference: str = "sistémica"  # sistémica | narrativa
+    abstraction_capacity: str = "media"      # alta | media | baja
+    cognitive_style: str = "lineal"          # lineal | arborescente
+    abstraction_tolerance: str = "media"     # alta | media | baja
+    observed_preferences: List[str] = field(default_factory=list)
+    id: Optional[int] = None
 
