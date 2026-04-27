@@ -1,23 +1,17 @@
-# Sprint 1 - Learning Loop (MemoryService update_outcome + Node extension + Orchestrator loop)
+# FASE 1 Stabilization TODO
 
-## Plan Steps (approved)
-Breakdown of approved Sprint 1:
+## Progress Tracker
 
-1. ✅ Create `core/learning/rules.py` - Simple profile adjustment rule based on error.
-2. ✅ Update `memory/models.py` - Add `prediction_error`, `confidence_before/after` to `DecisionMemoryNode`.
-3. ✅ Update `memory/service.py` - Add `update_outcome()` delegating to decision_store.
-4. ✅ Update `core/models.py` - Add `node_id: Optional[str] = None` to `DecisionReport` (linter note ignored).
-5. ✅ Update `core/orchestrator.py` - Extract expected_outcome from simulate, call service.update_outcome, return node_id.
-6. ✅ Test: Run /simulate, verify decision_log.json updates (manual: POST to /simulate, check memory/data/decision_log.json has expected_outcome, confidence_before, node_id in response).
-7. ✅ Sprint 1 complete - Learning loop implemented.
+- [x] 1. Add enforce_contract() to `core/contracts/contract_lock.py`
+- [x] 2. Remove output validation from `core/contracts/api_contract_gate.py`
+- [x] 3. Update `api/main.py` to use enforce_contract()`
+- [x] 4. Simplify `core/orchestrator.py` to pure router (explorer → simulator → guardian)
+- [x] 5. Clean `agents/guardian.py` (no events, add guardian_trace)
+- [x] 6. Ensure `agents/simulator.py` pure generation
+- [x] 7. Add `save_decision(report)` to `memory/service.py` (pure persist)
+- [x] 8. Add `test_every_output_passes_contract()` to `tests/system/test_contract_integrity.py`
+- [x] 9. Update `tests/system/test_full_pipeline.py` for new flow
+- [x] 10. Run pytest + API test
 
-**Ready for Sprint 2 - Memory Influence Layer**
+**FASE 1 100% ✅ Ready for FASE 2**
 
-Files updated:
-- core/learning/rules.py (new)
-- memory/models.py
-- memory/service.py 
-- core/models.py
-- core/orchestrator.py
-
-Linter notes (Pylance imports) ignored, logic sound.

@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
-from config import MEMORY_DB_PATH
+MEMORY_DB_PATH = "memory/data/aletheia.db"
 
 
 def init_db():

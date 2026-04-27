@@ -1,172 +1,43 @@
-"""Capa de servicio para el sistema de memoria.
-
-Decide qué memoria entra en el sistema y cómo se recupera el contexto.
-"""
+"""Capa de servicio para memoria - persistencia pura."""
 
 from datetime import datetime
-from typing import List, Optional
-from memory.storage import (
-    get_by_domain,
-    save_memory,
-    get_preferences_by_domain,
-    save_preference,
-    save_feedback,
-    save_session_event as storage_save_session_event,
-    get_session_events as storage_get_session_events,
-    get_memory_nodes_by_domain,
-)
-from memory.models import MemoryItem, UserProfile, FeedbackItem, MemoryNode, MemoryMeta
-from memory.decision_store import update_outcome as _db_update_outcome
+from typing import Dict
+from memory.storage import init_db, save_memory
+from memory.models import MemoryItem, DecisionMemoryNode
+from memory.decision_store import save_node
+from core.metrics.decision_quality import compute_dqs
 
-
-def retrieve_context(domain: str) -> List[str]:
-    """Recupera el contenido de las últimas memorias para un dominio."""
-    memories = get_by_domain(domain)
-    return [m.content for m in memories]
-
-
-def retrieve_context_nodes(domain: str) -> List[MemoryNode]:
-    """Recupera memoria estructurada; prioriza memory_nodes y cae a memory legacy."""
-    nodes = get_memory_nodes_by_domain(domain=domain, limit=50)
-    if nodes:
-        return nodes
-
-    memories = get_by_domain(domain)
-    legacy_nodes: List[MemoryNode] = []
-
-    for m in memories:
-        legacy_nodes.append(
-            MemoryNode(
-                type=m.type if m.type else "note",
-                title=m.content[:80] if m.content else "memory_item",
-                content={"text": m.content},
-                meta=MemoryMeta(
-                    source="system",
-                    confidence=float(m.confidence) if m.confidence is not None else 0.7,
-                    domain=m.domain,
-                ),
-            )
-        )
-
-    return legacy_nodes
-
-
-def store_event(question: str, domain: str, confidence: float = 0.8) -> int:
-    """Guarda una pregunta/evento en la memoria tras una ejecución.
-
-    Args:
-        question: Pregunta o contenido del evento.
-        domain: Dominio al que pertenece.
-        confidence: Nivel de confianza (por defecto 0.8).
-
-    Returns:
-        ID del item guardado.
-    """
-    item = MemoryItem(
-        type="event",
-        content=question,
-        domain=domain,
-        confidence=confidence,
-        created_at=datetime.now(),
-    )
-    return save_memory(item)
-
-
-def get_or_create_profile(domain: str) -> UserProfile:
-    """Recupera preferencias observadas y construye un perfil adaptado al dominio.
-
-    Args:
-        domain: Dominio de la consulta.
-
-    Returns:
-        UserProfile con preferencias observadas para ese dominio.
-    """
-    preferences = get_preferences_by_domain(domain)
-    return UserProfile(
-        verbosity_preference="media",
-        structure_preference="sistémica",
-        abstraction_capacity="media",
-        observed_preferences=preferences,
-    )
-
-
-def store_preference(domain: str, preference: str) -> int:
-    """Guarda una preferencia observada para que el perfil evolucione.
-
-    Args:
-        domain: Dominio al que pertenece la preferencia.
-        preference: Descripción de la preferencia observada.
-
-    Returns:
-        ID de la preferencia guardada.
-    """
-    return save_preference(domain, preference)
-
-
-def store_feedback(interaction_id: str, rating: int, signals: dict, comment: Optional[str] = None) -> int:
-    """Guarda feedback del usuario sobre una interacción.
-
-    Args:
-        interaction_id: ID de la interacción evaluada.
-        rating: Puntuación 1-5.
-        signals: Dict con señales de sistema (too_verbose, missed_key_info, etc.).
-        comment: Comentario opcional del usuario.
-
-    Returns:
-        ID del feedback guardado.
-    """
-    item = FeedbackItem(
-        interaction_id=interaction_id,
-        rating=rating,
-        signals=signals,
-        comment=comment,
-        created_at=datetime.now(),
-    )
-    return save_feedback(item)
-
-
-def store_session_event(event: dict) -> int:
-    """Guarda un evento cognitivo asociado a una sesión."""
-    return storage_save_session_event(event)
-
-
-def retrieve_session_events(session_id: str, limit: int = 1000) -> List[dict]:
-    """Recupera historial de eventos por sesión."""
-    return storage_get_session_events(session_id=session_id, limit=limit)
-
-
-def update_outcome(
-    node_id: str,
-    expected_outcome: Optional[str] = None,
-    real_outcome: Optional[str] = None,
-    delta: Optional[str] = None,
-    prediction_error: Optional[float] = None,
-    confidence_before: Optional[float] = None,
-    confidence_after: Optional[float] = None,
-) -> None:
-    """
-    Persistir error prediction vs actual outcome en MemoryNode.
+def self_evaluate_and_learn(node_id: str, real_outcome: str, user_profile: dict):
+    \"\"\"
+    Closes SEL loop.
+    \"\"\"
+    from memory.decision_store import get_node
+    from core.learning.evaluator import evaluate_decision
+    from core.learning.rules import adjust_confidence, adjust_memory_weight, adjust_profile
     
-    Para Sprint 1: guarda expected_outcome de /simulate como base para real later.
-    """
-    outcome_to_save = real_outcome or expected_outcome
-    if outcome_to_save:
-        _db_update_outcome(node_id, outcome_to_save, delta or "")
-    # TODO Sprint 3: update node fields (prediction_error etc.), apply learning rules
+    node = get_node(node_id)
+    node.real_outcome = real_outcome
+    
+    eval_metrics = evaluate_decision(node)
+    
+    node.prediction_error = eval_metrics["prediction_error"]
+    node.confidence_after = 1 - node.prediction_error
+    
+    # Apply rules
+    user_profile = adjust_confidence(user_profile, eval_metrics["confidence_error"])
+    user_profile = adjust_profile(user_profile, node.prediction_error)
+    node = adjust_memory_weight(node)
+    
+    # Persist
+    save_node(node)
+    # TODO: save_profile(user_profile)
+    
+    return {"error": node.prediction_error, "adjusted": True}
 
+# Legacy (keep minimal)
+def retrieve_context(domain: str) -> list:
+    return []
 
-def find_similar_decisions(question: str, domain: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """
-    Encuentra decisiones similares para influence engine with similarity_score.
-    """
-    from memory.decision_store import find_similar
-    nodes = find_similar(question, domain, limit)
-    for node in nodes:
-        # keyword similarity
-        q_words = set(question.lower().split())
-        item_words = set(node["question"].lower().split())
-        intersection = len(q_words & item_words)
-        union = len(q_words | item_words)
-        node["similarity_score"] = intersection / union if union > 0 else 0.0
-    return nodes
+def init_memory():
+    init_db()
 

@@ -1,37 +1,48 @@
-"""Learning Rules base - Simple adjustments to profile based on prediction errors.
+"""Learning Rules - Adjust based on evaluation."""
 
-Sprint 1: Basic rule for accumulated error adjustment.
-"""
+def adjust_confidence(profile: dict, confidence_error: float) -> dict:
+    \"\"\"
+    Calibrates confidence bias.
+    \"\"\"
+    confidence_bias = profile.get("confidence_bias", 1.0)
+    
+    if confidence_error > 0.3:
+        confidence_bias *= 0.9  # lower confidence
+    else:
+        confidence_bias *= 1.02  # slight boost
+    
+    profile["confidence_bias"] = round(confidence_bias, 3)
+    return profile
 
-from typing import Optional
-from copy import deepcopy
-from memory.models import UserProfile
+def adjust_memory_weight(node: dict) -> dict:
+    \"\"\"
+    Adjusts memory penalty/boost.
+    \"\"\"
+    prediction_error = node.get("prediction_error", 0.5)
+    
+    if prediction_error > 0.4:
+        node["memory_penalty"] = 0.5
+    elif prediction_error < 0.2:
+        node["memory_boost"] = 1.1
+    
+    return node
 
+def adjust_profile(profile: dict, error: float) -> dict:
+    \"\"\"
+    Evolves cognitive profile.
+    \"\"\"
+    risk_aversion = profile.get("risk_aversion", 0.5)
+    exploration_bias = profile.get("exploration_bias", 0.5)
+    
+    if error > 0.4:
+        risk_aversion += 0.05
+        exploration_bias += 0.05
+    elif error < 0.2:
+        risk_aversion -= 0.02
+        exploration_bias -= 0.02
+    
+    profile["risk_aversion"] = round(risk_aversion, 3)
+    profile["exploration_bias"] = round(exploration_bias, 3)
+    
+    return profile
 
-def adjust_profile_based_on_error(
-    profile: UserProfile, 
-    prediction_error: float, 
-    domain: str,
-    error_threshold: float = 0.3
-) -> UserProfile:
-    """
-    Ajuste simple de profile basado en error de predicción acumulado.
-    
-    Si error > threshold, reduce abstraction_capacity o verbosity.
-    """
-    new_profile = deepcopy(profile)
-    
-    # Acumular señal de error en observed_preferences
-    error_signal = f"high_error_{domain}: {prediction_error:.2f}"
-    if error_signal not in new_profile.observed_preferences:
-        new_profile.observed_preferences.append(error_signal)
-    
-    # Regla simple: si error alto repetido, ajustar preferencias
-    high_errors = sum(1 for p in new_profile.observed_preferences if 'high_error_' in p)
-    if high_errors >= 2:
-        if new_profile.abstraction_capacity == "alta":
-            new_profile.abstraction_capacity = "media"
-        elif new_profile.verbosity_preference == "alta":
-            new_profile.verbosity_preference = "media"
-    
-    return new_profile

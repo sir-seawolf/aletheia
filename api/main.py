@@ -5,10 +5,15 @@ import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from core.orchestrator import process_request
+from core.contracts.contract_lock import enforce_contract
+from core.contracts.api_contract_gate import APIContractGate
+from memory.service import save_decision
+from core.metrics.system_metrics import get_system_metrics
+from api.models import FeedbackRequest
+from memory.service import self_evaluate_and_learn
 from core.event_bus import get_event
-from memory.models import UserProfile
 from memory.service import retrieve_session_events
 
 app = FastAPI(title="Aletheia", description="Personal cognitive system for decision-making")
@@ -21,88 +26,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-class RiskConfig(BaseModel):
-    """Configuración de riesgo tipada."""
-
-    level: str
-    require_scenarios: bool
-    require_guardian: bool
-
-
-class UserProfileInput(BaseModel):
-    """Perfil cognitivo del usuario para adaptar el comportamiento del sistema."""
-
-    verbosity_preference: str = "media"
-    structure_preference: str = "sistémica"
-    abstraction_capacity: str = "media"
-
-
 class SimulationRequest(BaseModel):
-    """Modelo de entrada para solicitudes de simulación."""
-
+    """Entrada mínima del sistema."""
     domain: str
     question: str
     session_id: Optional[str] = None
-    memory: List[str] = []
-    constraints: Optional[List[str]] = None
-    user_profile: Optional[UserProfileInput] = None
 
-
-class SimulationResponse(BaseModel):
-    """Modelo de salida para respuestas de simulación."""
-
-    domain: str
-    risk: Dict[str, Any]
-    pipeline: Dict[str, Any]
-    final_output: Dict[str, Any]
-    meta: Dict[str, Any]
-    trace: Dict[str, Any]
-
-
-@app.post("/simulate", response_model=SimulationResponse)
+@app.post("/simulate")
 def simulate(request: SimulationRequest):
     """
-    Endpoint principal para ejecutar una simulación cognitiva.
+    Endpoint principal - Pipeline limpio: input → process → contract.
     """
-    request_session_id = request.session_id or str(uuid.uuid4())
-    print(
-        f"[Aletheia] Session: {request_session_id} | Domain: {request.domain} | "
-        f"Question: {request.question}"
-    )
+    # 1. Validate input
+    validated_input = APIContractGate.validate_request({
+        "domain": request.domain,
+        "question": request.question
+    })
 
-    # Convertir perfil de entrada si existe
-    profile = None
-    if request.user_profile:
-        profile = UserProfile(
-            verbosity_preference=request.user_profile.verbosity_preference,
-            structure_preference=request.user_profile.structure_preference,
-            abstraction_capacity=request.user_profile.abstraction_capacity,
-        )
-
-    # Si memory viene vacío, el orchestrator auto-recupera desde SQLite
+    # 2. Process
     result = process_request(
-        domain=request.domain,
-        question=request.question,
-        memory_data=request.memory if request.memory else None,
-        constraints=request.constraints,
-        user_profile=profile,
-        session_id=request_session_id,
+        domain=validated_input["domain"],
+        question=validated_input["question"],
     )
-    return result
 
+    # 3. Enforce contract
+    final = enforce_contract(result)
+
+    save_decision(final)
+    return final
+
+@app.get("/system/metrics")
+def system_metrics():
+    return get_system_metrics()
 
 @app.get("/")
 def root():
     """Información básica del sistema."""
     return {"system": "Aletheia", "status": "running", "mode": "local-first cognitive engine"}
 
-
 @app.get("/health")
 def health_check():
     """Verificación de estado del sistema."""
     return {"status": "ok", "system": "aletheia"}
-
 
 @app.get("/sessions/{session_id}/events")
 def get_session_events(session_id: str, limit: int = 1000):
@@ -111,7 +76,6 @@ def get_session_events(session_id: str, limit: int = 1000):
         "session_id": session_id,
         "events": retrieve_session_events(session_id=session_id, limit=limit),
     }
-
 
 @app.websocket("/stream/{session_id}")
 async def stream(websocket: WebSocket, session_id: str):
