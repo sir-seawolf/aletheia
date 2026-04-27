@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 
 @dataclass
@@ -27,5 +27,17 @@ class UserProfile:
     cognitive_style: str = "lineal"          # lineal | arborescente
     abstraction_tolerance: str = "media"     # alta | media | baja
     observed_preferences: List[str] = field(default_factory=list)
+    id: Optional[int] = None
+
+
+@dataclass
+class FeedbackItem:
+    """Feedback del usuario sobre una interacción."""
+
+    interaction_id: str
+    rating: int                         # 1-5
+    signals: Dict[str, bool] = field(default_factory=dict)
+    comment: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
     id: Optional[int] = None
 
