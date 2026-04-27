@@ -5,21 +5,49 @@ Decide qué memoria entra en el sistema y cómo se recupera el contexto.
 
 from datetime import datetime
 from typing import List, Optional
-from memory.storage import get_by_domain, save_memory, get_preferences_by_domain, save_preference, save_feedback
-from memory.models import MemoryItem, UserProfile, FeedbackItem
+from memory.storage import (
+    get_by_domain,
+    save_memory,
+    get_preferences_by_domain,
+    save_preference,
+    save_feedback,
+    save_session_event as storage_save_session_event,
+    get_session_events as storage_get_session_events,
+    get_memory_nodes_by_domain,
+)
+from memory.models import MemoryItem, UserProfile, FeedbackItem, MemoryNode, MemoryMeta
 
 
 def retrieve_context(domain: str) -> List[str]:
-    """Recupera el contenido de las últimas memorias para un dominio.
-
-    Args:
-        domain: Dominio de la consulta.
-
-    Returns:
-        Lista de strings con el contenido de cada memoria.
-    """
+    """Recupera el contenido de las últimas memorias para un dominio."""
     memories = get_by_domain(domain)
     return [m.content for m in memories]
+
+
+def retrieve_context_nodes(domain: str) -> List[MemoryNode]:
+    """Recupera memoria estructurada; prioriza memory_nodes y cae a memory legacy."""
+    nodes = get_memory_nodes_by_domain(domain=domain, limit=50)
+    if nodes:
+        return nodes
+
+    memories = get_by_domain(domain)
+    legacy_nodes: List[MemoryNode] = []
+
+    for m in memories:
+        legacy_nodes.append(
+            MemoryNode(
+                type=m.type if m.type else "note",
+                title=m.content[:80] if m.content else "memory_item",
+                content={"text": m.content},
+                meta=MemoryMeta(
+                    source="system",
+                    confidence=float(m.confidence) if m.confidence is not None else 0.7,
+                    domain=m.domain,
+                ),
+            )
+        )
+
+    return legacy_nodes
 
 
 def store_event(question: str, domain: str, confidence: float = 0.8) -> int:
@@ -94,4 +122,14 @@ def store_feedback(interaction_id: str, rating: int, signals: dict, comment: Opt
         created_at=datetime.now(),
     )
     return save_feedback(item)
+
+
+def store_session_event(event: dict) -> int:
+    """Guarda un evento cognitivo asociado a una sesión."""
+    return storage_save_session_event(event)
+
+
+def retrieve_session_events(session_id: str, limit: int = 1000) -> List[dict]:
+    """Recupera historial de eventos por sesión."""
+    return storage_get_session_events(session_id=session_id, limit=limit)
 

@@ -1,7 +1,7 @@
 """Constructor del estado mental de Aletheia."""
 
-from typing import List, Optional, Dict, Any
-from memory.models import UserProfile
+from typing import List, Optional, Dict, Any, Sequence, Union
+from memory.models import UserProfile, MemoryNode
 
 
 class Context:
@@ -11,7 +11,7 @@ class Context:
         self,
         domain: str,
         risk: Dict[str, Any],
-        memory: List[str],
+        memory: Sequence[Union[MemoryNode, str]],
         question: str,
         constraints: Optional[List[str]] = None,
         user_profile: Optional[UserProfile] = None,
@@ -50,7 +50,7 @@ class Context:
         cls,
         domain: str,
         question: str,
-        memory: List[str],
+        memory: Sequence[Union[MemoryNode, str]],
         risk_config: Dict[str, Any],
         constraints: Optional[List[str]] = None,
         user_profile: Optional[UserProfile] = None,

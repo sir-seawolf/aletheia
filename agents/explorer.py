@@ -1,11 +1,12 @@
 """El analista frío. Busca en memoria, selecciona lo relevante, detecta falta de datos."""
 
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Sequence, Union
 from core.context import Context
 from core.event_bus import build_event, emit_event
 from ai.ollama_client import generate
 from ai.prompts import exploration_prompt
+from memory.models import MemoryNode
 
 
 def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
@@ -108,20 +109,28 @@ def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:
 
 
 def _extract_relevant_facts(
-    memory: List[str],
+    memory: Sequence[Union[MemoryNode, str]],
     domain: str,
     question: str,
     profile,
 ) -> List[str]:
-    """Extrae hechos relevantes de la memoria (fallback por keywords)."""
+    """Extrae hechos relevantes de la memoria (fallback por keywords), soportando MemoryNode y str."""
     keywords = set(question.lower().split())
     keywords.add(domain.lower())
 
-    relevant = []
+    relevant: List[str] = []
     for item in memory:
-        item_lower = item.lower()
-        if any(kw in item_lower for kw in keywords):
-            relevant.append(item)
+        if isinstance(item, MemoryNode):
+            node_domain = (item.meta.domain or "").lower()
+            text = f"{item.title} {item.content}".lower()
+            if node_domain and node_domain != domain.lower():
+                continue
+            if any(kw in text for kw in keywords):
+                relevant.append(f"{item.title}: {item.content}")
+        else:
+            item_lower = str(item).lower()
+            if any(kw in item_lower for kw in keywords):
+                relevant.append(str(item))
 
     # Ajuste por perfil
     max_items = 5
@@ -130,11 +139,8 @@ def _extract_relevant_facts(
 
     # Estilo cognitivo
     if profile and getattr(profile, "cognitive_style", None) == "arborescente":
-        # diversidad (MVP: mantener orden original)
         return relevant[:max_items]
-    else:
-        # linealidad → orden temporal aproximado (por ahora orden natural)
-        return relevant[:max_items]
+    return relevant[:max_items]
 
 
 def _detect_gaps(

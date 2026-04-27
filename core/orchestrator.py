@@ -18,6 +18,7 @@ from memory.models import UserProfile, MemoryNode
 from feedback.service import apply_learning
 import concurrent.futures
 import functools
+from core.models import DecisionReport
 from feedback.models import FeedbackSignal
 
 # Pipeline explícito de pasos
@@ -363,20 +364,42 @@ def process_request(
         learned_adjustments=learned_adjustments,
     )
 
-    # 8. Construir respuesta final con trazabilidad
-    return {
-        "domain": domain,
-        "risk": risk_config,
-        "pipeline": step_results,
-        "final_output": step_results["validate"].get("corrected_output", {"error": "Pipeline partially failed, check trace"}) if "validate" in step_results else {"error": "Pipeline failed early"},
-        "meta": {
-            "interaction_id": interaction_id,
-            "steps_executed": steps_executed,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "version": "0.3.0",
+    # FASE 3: Guardar decisión en memoria
+    from memory.decision_store import save_node
+    from memory.models import DecisionMemoryNode
+    import uuid
+
+    node = DecisionMemoryNode(
+        id=str(uuid.uuid4()),
+        timestamp=datetime.utcnow().isoformat(),
+        domain=domain,
+        question=question,
+        context_snapshot={"risk": risk_config},
+        scenarios=decision_report.scenarios,
+        llm_insight={"text": decision_report.llm_insight},
+        guardian={
+            "block": decision_report.validation_issues,
+            "severity": "low",
         },
-        "trace": cognitive_trace,
-    }
+        expected_outcome="Pendiente"
+    )
+    save_node(node)
+
+    # 8. Construir respuesta final con trazabilidad
+    decision_report = DecisionReport.from_pipeline({
+        'explore': step_results.get('explore', {}),
+        'simulate': step_results.get('simulate', {}),
+        'validate': step_results.get('validate', {}),
+    }, {
+        'interaction_id': interaction_id,
+        'domain': domain,
+        'question': question,
+        'snapshot': cognitive_trace.get('context_snapshot', {}),
+        'risk_level': risk_config.get('level', 'medium'),
+        'steps_executed': steps_executed,
+    })
+    
+    return decision_report.to_dict()
 
 
 def _build_cognitive_trace(

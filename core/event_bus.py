@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from queue import Empty, Queue
 from typing import Any, Dict
+from memory.service import store_session_event
 
 
 @dataclass
@@ -55,10 +56,16 @@ def get_or_create_stream(session_id: str) -> Queue[Dict[str, Any]]:
 
 
 def emit_event(event: Dict[str, Any]) -> None:
-    """Publica un evento en la cola de la sesión correspondiente."""
+    """Publica un evento en la cola de la sesión correspondiente y persiste historial."""
     session_id = event.get("session_id", "local")
     stream = get_or_create_stream(session_id)
     stream.put(event)
+
+    try:
+        store_session_event(event)
+    except Exception:
+        # Persistencia best-effort: no bloquear el pipeline por fallo de storage.
+        pass
 
 
 def get_event(session_id: str) -> Dict[str, Any] | None:

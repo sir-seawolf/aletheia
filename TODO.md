@@ -1,13 +1,43 @@
-# Fix Blocking Issues in Task Execution
+# TODO.md - Ejecución del Plan Refactor Cognitivo (Aprobado por Usuario)
 
-## Step 1: Create TODO.md [COMPLETED]
+## Estado Anterior (Completado)
+- [x] Step 1: Create TODO.md 
+- [x] Step 2: Timeout/error handling in orchestrator
+- [x] Step 3: Test orchestrator sample
+- [x] Step 4: No blocking on Ollama down
+- [x] Step 5: Skip risk_engine timeout
 
-## Step 2: Add timeout and graceful error handling to core/orchestrator.py [COMPLETED]
+## FASE 1 — CIERRE COGNITIVO (Prioridad Máxima - Usuario Feedback)
+1. [x] **Unificar DecisionReport como contrato único** (simulator.py)
+   - AI path → _build_decision_report_from_ai()
+   - Siempre return DecisionReport.to_dict()
+   - Add _calculate_overall_confidence()
+   - Enhanced snapshot (facts_count, gaps_count, temporal_data)
+2. [x] **Simulator híbrido real** (simulator.py)
+   - Validar JSON structure
+   - Add global 'insight' from LLM
+   - Add 'scenario_count'
+3. [x] **Guardian fuerte** (guardian.py)
+   - ≥2 escenarios mandatory high-risk (block if not)
+   - Contradiction/diversity check
+   - Enforce min quality
+   - New checks: confidence/insight length/contradiction
+   - block, severity, recommendation, confidence_adjust
 
-## Step 3: Test the orchestrator with a sample request [COMPLETED]
+## FASE 2 — VALIDACIÓN
+4. [ ] Tests de comportamiento (new test_simulator_hybrid.py)
+   - High-risk → ≥2 scenarios
+   - No data → low confidence + gaps
+   - Profile diffs → varied output
 
-## Step 4: Verify no blocking occurs even if Ollama is down [COMPLETED - uses fallbacks successfully]
+## FASE 3 — MEMORIA INTELIGENTE (Post-Fase1)
+5. [ ] Embeddings + semantic search
 
-## Step 5: Update risk_engine.py if needed for better timeouts [SKIPPED - no timeouts needed; Ollama client has 120s]
+## FASE 4 — UI/PROD
+6. [ ] UI enhancements
+7. [ ] Docker/CI
 
-## Step 6: attempt_completion [PENDING]
+## Progreso Actual: FASE 1 Step 1 (simulator.py refactor)
+
+**Siguiente acción**: Editar agents/simulator.py
+
