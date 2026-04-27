@@ -33,7 +33,7 @@ def run(context: Context, exploration: Dict[str, Any], session_id: str = "local"
     if context.user_profile and context.user_profile.abstraction_capacity == "alta":
         base_temperature = min(base_temperature + 0.1, 1.0)
 
-    # IA first
+    # IA first with memory influence (Sprint 2)
     ai_result = _try_generate_with_ai(context, exploration, base_temperature)
     if not ai_result:
         # Fallback

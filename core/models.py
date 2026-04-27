@@ -31,7 +31,9 @@ class DecisionReport:
     # Meta
     overall_confidence: float
     risk_level: str
+    node_id: Optional[str] = None
     steps_executed: List[str]
+
     llm_insight: str = ""
     
     @classmethod

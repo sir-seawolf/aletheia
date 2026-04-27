@@ -22,5 +22,9 @@ class DecisionMemoryNode:
 
     real_outcome: Optional[str] = None
     delta: Optional[str] = None
+    prediction_error: Optional[float] = None
+    confidence_before: Optional[float] = None
+    confidence_after: Optional[float] = None
 
     tags: List[str] = field(default_factory=list)
+

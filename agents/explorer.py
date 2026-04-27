@@ -30,6 +30,15 @@ def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
         )
     )
 
+    # Similar decisions from memory for facts enhancement (Sprint 2)
+    similar_decisions = context.memory_service.find_similar_decisions(
+        context.question, 
+        context.domain, 
+        limit=3
+    ) if hasattr(context, 'memory_service') else []
+
+    enhanced_memory = context.memory + [f"Similar past decision: {d.get('question', '')} -> outcome: {d.get('expected_outcome', 'N/A')}" for d in similar_decisions]
+
     # Intentar extracción con IA; fallback a lógica estructurada
     ai_result = _try_extract_with_ai(context)
     if ai_result:
@@ -42,14 +51,15 @@ def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
                 payload={
                     "facts": ai_result.get("facts", []),
                     "gaps": ai_result.get("gaps", []),
+                    "similar_used": len(similar_decisions),
                 },
                 confidence=float(ai_result.get("confidence", 0.0)),
             )
         )
         return ai_result
 
-    # Fallback: análisis simple basado en palabras clave
-    memory = context.memory
+    # Fallback: análisis simple basado en palabras clave with enhanced memory
+    memory = enhanced_memory
     question = context.question
     domain = context.domain
     profile = context.user_profile
@@ -62,6 +72,7 @@ def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
         "facts": facts,
         "gaps": gaps,
         "confidence": confidence,
+        "similar_used": len(similar_decisions),
     }
 
     emit_event(

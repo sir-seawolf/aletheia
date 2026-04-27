@@ -13,8 +13,9 @@ from memory.service import (
     store_event,
     get_or_create_profile,
     store_preference,
+    update_outcome,
 )
-from memory.models import UserProfile, MemoryNode
+from memory.models import UserProfile, MemoryNode, DecisionMemoryNode
 from feedback.service import apply_learning
 import concurrent.futures
 import functools
@@ -364,26 +365,40 @@ def process_request(
         learned_adjustments=learned_adjustments,
     )
 
-    # FASE 3: Guardar decisión en memoria
-    from memory.decision_store import save_node
-    from memory.models import DecisionMemoryNode
+    # FASE 3: Learning Loop - Persist decision node with expected outcome from simulate
     import uuid
+    from memory.decision_store import save_node
+
+    node_id = str(uuid.uuid4())
+    simulate_results = step_results.get('simulate', {})
+    scenarios = simulate_results.get('scenarios', [])
+    expected_outcome = scenarios[0].get('outcome', 'No scenario generated') if scenarios else 'Pendiente'
+    confidence_before = step_results.get('explore', {}).get('confidence', 0.5)
+    validation_issues = step_results.get('validate', {}).get('issues', [])
 
     node = DecisionMemoryNode(
-        id=str(uuid.uuid4()),
+        id=node_id,
         timestamp=datetime.utcnow().isoformat(),
         domain=domain,
         question=question,
         context_snapshot={"risk": risk_config},
-        scenarios=decision_report.scenarios,
-        llm_insight={"text": decision_report.llm_insight},
+        scenarios=scenarios,
+        llm_insight={},  # From simulator LLM if available, simplified
         guardian={
-            "block": decision_report.validation_issues,
+            "block": validation_issues,
             "severity": "low",
         },
-        expected_outcome="Pendiente"
+        expected_outcome=expected_outcome,
+        confidence_before=confidence_before,
     )
     save_node(node)
+
+    # Close feedback loop with expected outcome from /simulate
+    update_outcome(
+        node_id,
+        expected_outcome=expected_outcome,
+        confidence_before=confidence_before
+    )
 
     # 8. Construir respuesta final con trazabilidad
     decision_report = DecisionReport.from_pipeline({
@@ -397,6 +412,7 @@ def process_request(
         'snapshot': cognitive_trace.get('context_snapshot', {}),
         'risk_level': risk_config.get('level', 'medium'),
         'steps_executed': steps_executed,
+        'node_id': node_id,
     })
     
     return decision_report.to_dict()

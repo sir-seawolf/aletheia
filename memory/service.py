@@ -16,6 +16,7 @@ from memory.storage import (
     get_memory_nodes_by_domain,
 )
 from memory.models import MemoryItem, UserProfile, FeedbackItem, MemoryNode, MemoryMeta
+from memory.decision_store import update_outcome as _db_update_outcome
 
 
 def retrieve_context(domain: str) -> List[str]:
@@ -132,4 +133,40 @@ def store_session_event(event: dict) -> int:
 def retrieve_session_events(session_id: str, limit: int = 1000) -> List[dict]:
     """Recupera historial de eventos por sesión."""
     return storage_get_session_events(session_id=session_id, limit=limit)
+
+
+def update_outcome(
+    node_id: str,
+    expected_outcome: Optional[str] = None,
+    real_outcome: Optional[str] = None,
+    delta: Optional[str] = None,
+    prediction_error: Optional[float] = None,
+    confidence_before: Optional[float] = None,
+    confidence_after: Optional[float] = None,
+) -> None:
+    """
+    Persistir error prediction vs actual outcome en MemoryNode.
+    
+    Para Sprint 1: guarda expected_outcome de /simulate como base para real later.
+    """
+    outcome_to_save = real_outcome or expected_outcome
+    if outcome_to_save:
+        _db_update_outcome(node_id, outcome_to_save, delta or "")
+    # TODO Sprint 3: update node fields (prediction_error etc.), apply learning rules
+
+
+def find_similar_decisions(question: str, domain: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    Encuentra decisiones similares para influence engine with similarity_score.
+    """
+    from memory.decision_store import find_similar
+    nodes = find_similar(question, domain, limit)
+    for node in nodes:
+        # keyword similarity
+        q_words = set(question.lower().split())
+        item_words = set(node["question"].lower().split())
+        intersection = len(q_words & item_words)
+        union = len(q_words | item_words)
+        node["similarity_score"] = intersection / union if union > 0 else 0.0
+    return nodes
 
