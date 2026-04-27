@@ -4,16 +4,13 @@ import uvicorn
 from config import MODEL
 
 
-def main():
-    print(f"🧠 Aletheia iniciando...")
-    print(f"   Modelo: {MODEL}")
-    print(f"   API: http://127.0.0.1:8000")
-    print(f"   Docs: http://127.0.0.1:8000/docs")
-    print()
+"""
+Entry point - now uses CLI.
+python run.py → python cli.py start
+"""
 
-    uvicorn.run("api.main:app", host="127.0.0.1", port=8000, reload=True)
-
-
+from cli import cli
 if __name__ == "__main__":
-    main()
+    cli()
+
 

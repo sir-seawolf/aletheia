@@ -41,6 +41,15 @@ def find_similar(question: str, domain: str, limit: int = 5) -> List[Dict[str, A
         overlap = len(q_words & item_words)
         score += overlap
         if score > 0:
+            # Add age_days for MRE
+            item_timestamp = item.get("timestamp")
+            if item_timestamp:
+                try:
+                    node_date = datetime.fromisoformat(item_timestamp)
+                    age_days = (datetime.utcnow() - node_date).days
+                    item["age_days"] = age_days
+                except:
+                    item["age_days"] = 30.0  # default
             results.append((score, item))
     results.sort(key=lambda x: x[0], reverse=True)
     return [r[1] for r in results[:limit]]

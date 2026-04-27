@@ -1,6 +1,28 @@
 # Changelog
 
-## v0.2.0 — Cognitive Live MVP (current)
+## v1.0.0 — FASE 1 Stabilized Kernel (2024)
+
+### Added
+- FASE 1 stabilization: contract_lock.enforce_contract() - single source of truth
+- api_contract_gate: input validation only
+- api/main.py: clean pipeline input → process → enforce_contract
+- orchestrator.py: pure router explorer → simulator → guardian
+- guardian.py: 6 rules centralized, guardian_trace added
+- simulator.py: pure generation stub
+- memory/service.py: save_decision pure persist
+- Tests: test_every_output_passes_contract, updated full_pipeline
+
+### Changed
+- All changes minimal, order: contract → api → orchestrator → agents → memory → tests
+- Zero roturas in core flow
+
+### Status
+- Contract enforced on all outputs
+- Guardian decisions traced
+- TODO.md 100% complete
+
+## v0.2.0 — Cognitive Live MVP (previous)
+
 
 ### Added
 - Session-aware cognitive event streaming architecture.

@@ -60,10 +60,10 @@ Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adic
 """
 
 
-def simulation_prompt(context: Dict[str, Any], exploration: Dict[str, Any]) -> str:
+def simulation_prompt(context: Dict[str, Any], exploration: Dict[str, Any], memory_bias: Dict[str, Any] = None) -> str:
     """
-    Prompt para el agente Simulator.
-    Genera escenarios y análisis.
+    Prompt para el agente Simulator (Sprint 2: memory-weighted).
+    Genera escenarios influenciados por memoria histórica.
     """
     risk_level = context.get('risk', {}).get('level', 'low')
     require_scenarios = context.get('risk', {}).get('require_scenarios', False)
@@ -76,7 +76,29 @@ def simulation_prompt(context: Dict[str, Any], exploration: Dict[str, Any]) -> s
         else "Genera un análisis exploratorio con un único escenario."
     )
 
-    return f"""Eres un simulador estratégico. Tu trabajo es generar escenarios futuros.
+    memory_section = ""
+    if memory_bias:
+        regulation = memory_bias.get("regulation", {})
+        memory_section = f"""
+INFLUENCIA DE MEMORIA HISTÓRICA:
+
+{memory_bias["bias_summary"]}
+
+REGULATION MODE: {regulation.get('mode', 'balanced')}
+BIAS MULTIPLIER: {regulation.get('bias_multiplier', 1.0)}
+{regulation.get('message', '')}
+
+CASOS SIMILARES RECIENTES:
+{json.dumps(memory_bias["influential_cases"], indent=2, ensure_ascii=False)}
+
+Incorpora esta memoria regulada como sesgo estructural:
+- Aplica MRE weights/decay
+- Penaliza patrones que fallaron (high error/low weight)
+- Sigue regulation mode
+"""
+
+
+    return f"""Eres un simulador estratégico. Tu trabajo es generar escenarios futuros {memory_section if memory_section else ''}
 
 Dominio: {context.get('domain', 'general')}
 Pregunta: {context.get('question', '')}
