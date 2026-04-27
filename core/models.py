@@ -1,41 +1,40 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Any
+from dataclasses import dataclass, asdict, field
 
 @dataclass
 class DecisionReport:
     """Informe de decisión unificado como output único del sistema."""
-    interaction_id: str
-    timestamp: str  # ISO string
-    domain: str
-    question: str
+    interaction_id: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    domain: str = ""
+    question: str = ""
     
     # Snapshot cognitivo
-    snapshot: Dict[str, Any]
+    snapshot: Dict[str, Any] = field(default_factory=dict)
     
     # Exploración
-    facts: List[str]
-    gaps: List[str]
-    exploration_confidence: float
+    facts: List[str] = field(default_factory=list)
+    gaps: List[str] = field(default_factory=list)
+    exploration_confidence: float = 0.5
     
     # Simulación
-    scenarios: List[Dict[str, Any]]
-    risks: List[str]
-    assumptions: List[str]
+    scenarios: List[Dict[str, Any]] = field(default_factory=list)
+    risks: List[str] = field(default_factory=list)
+    assumptions: List[str] = field(default_factory=list)
     
     # Validación
-    validation_issues: List[str]
-    valid: bool
+    validation_issues: List[str] = field(default_factory=list)
+    valid: bool = False
     
     # Meta
-    overall_confidence: float
-    risk_level: str
+    overall_confidence: float = 0.5
+    risk_level: str = "medium"
     node_id: Optional[str] = None
-    steps_executed: List[str]
+    steps_executed: List[str] = field(default_factory=list)
 
     llm_insight: str = ""
-    
+
     @classmethod
     def from_pipeline(cls, pipeline_result: Dict[str, Any], context: Dict[str, Any]) -> 'DecisionReport':
         explore = pipeline_result.get('explore', {})
@@ -59,8 +58,10 @@ class DecisionReport:
             overall_confidence=min(1.0, explore.get('confidence', 0.5) * 0.8 + (1.0 if validate.get('valid', False) else 0.3) * 0.2),
             risk_level=context.get('risk_level', 'medium'),
             steps_executed=context.get('steps_executed', []),
+            llm_insight=simulate.get('llm_insight', ''),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         return d
+

@@ -136,7 +136,7 @@ export default function App() {
 
         {error && <div className="error">{error}</div>}
 
-        {result && <pre className="result">{JSON.stringify(result, null, 2)}</pre>}
+
       </div>
     </div>
   );

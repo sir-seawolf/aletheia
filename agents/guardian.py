@@ -2,12 +2,11 @@
 
 from typing import Dict, Any
 from core.event_bus import build_event, emit_event
+from core.schemas.decision_contract import DecisionReport as DecisionReportSchema
 
 
-def validate(
-    simulation: Dict[str, Any],
-    risk_config: Dict[str, Any],
-    session_id: str = "local",
+
+
 ) -> Dict[str, Any]:
     """
     Valida el output del simulador contra las reglas de riesgo.
@@ -106,4 +105,3 @@ def validate(
     )
 
     return result
-
