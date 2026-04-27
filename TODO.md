@@ -1,35 +1,43 @@
-# TODO — Cognitive Event Bus + Live Stream + UI MVP
+# TODO.md - Ejecución del Plan Refactor Cognitivo (Aprobado por Usuario)
 
-- [x] Revisar estado actual del backend y pipeline existente
+## Estado Anterior (Completado)
+- [x] Step 1: Create TODO.md 
+- [x] Step 2: Timeout/error handling in orchestrator
+- [x] Step 3: Test orchestrator sample
+- [x] Step 4: No blocking on Ollama down
+- [x] Step 5: Skip risk_engine timeout
 
-- [x] Migrar event bus a sesiones en `core/event_bus.py`
-  - [x] mantener modelo `CognitiveEvent` (timestamp, session_id, agent, stage, event_type, payload, confidence)
-  - [x] reemplazar cola global por streams por sesión
-  - [x] `emit_event(event)` enruta por `session_id`
-  - [x] `get_event(session_id)` consume por sesión
+## FASE 1 — CIERRE COGNITIVO (Prioridad Máxima - Usuario Feedback)
+1. [x] **Unificar DecisionReport como contrato único** (simulator.py)
+   - AI path → _build_decision_report_from_ai()
+   - Siempre return DecisionReport.to_dict()
+   - Add _calculate_overall_confidence()
+   - Enhanced snapshot (facts_count, gaps_count, temporal_data)
+2. [x] **Simulator híbrido real** (simulator.py)
+   - Validar JSON structure
+   - Add global 'insight' from LLM
+   - Add 'scenario_count'
+3. [x] **Guardian fuerte** (guardian.py)
+   - ≥2 escenarios mandatory high-risk (block if not)
+   - Contradiction/diversity check
+   - Enforce min quality
+   - New checks: confidence/insight length/contradiction
+   - block, severity, recommendation, confidence_adjust
 
-- [x] Propagar `session_id` en contexto/orquestación
-  - [x] `core/context.py` incluye `session_id` en constructor y serialización
-  - [x] `Context.from_request(..., session_id=...)`
-  - [x] `core/orchestrator.py` crea contexto con sesión activa
+## FASE 2 — VALIDACIÓN
+4. [ ] Tests de comportamiento (new test_simulator_hybrid.py)
+   - High-risk → ≥2 scenarios
+   - No data → low confidence + gaps
+   - Profile diffs → varied output
 
-- [x] Robustecer errores de pipeline
-  - [x] emitir evento estructurado `stage=blocked`, `event_type=error` cuando falla un step
-  - [x] conservar propagación de excepción para visibilidad operativa
+## FASE 3 — MEMORIA INTELIGENTE (Post-Fase1)
+5. [ ] Embeddings + semantic search
 
-- [x] Exponer stream realtime por sesión en `api/main.py`
-  - [x] endpoint WebSocket `GET ws://127.0.0.1:8000/stream/{session_id}`
-  - [x] loop async con `get_event(session_id)`
-  - [x] throttling de polling (`asyncio.sleep(0.05)`) en cada iteración
+## FASE 4 — UI/PROD
+6. [ ] UI enhancements
+7. [ ] Docker/CI
 
-- [x] UI MVP (pantalla única cognitiva) en `aletheia-ui`
-  - [x] scaffold React
-  - [x] `App.js` con input, botón de simular, stream de eventos, panel de resultado
-  - [x] conexión a `POST /simulate`
-  - [x] conexión a `ws://127.0.0.1:8000/stream/{session_id}`
-  - [x] estilos base en `App.css`
-  - [x] build de producción OK (`npm run build`)
+## Progreso Actual: FASE 1 Step 1 (simulator.py refactor)
 
-- [ ] Testing exhaustivo pendiente (acordado continuar después de documentación)
-  - [ ] Backend: `/` + edge cases adicionales `/simulate` + validación real de WS por sesión
-  - [ ] Frontend: flujo E2E visual completo (input → stream live → resultado)
+**Siguiente acción**: Editar agents/simulator.py
+

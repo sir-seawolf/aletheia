@@ -1,43 +1,26 @@
-"""Modelos de datos para el sistema de memoria."""
-
 from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-
 
 @dataclass
-class MemoryItem:
-    """Un item de memoria estructurado."""
+class DecisionMemoryNode:
+    id: str
+    timestamp: str
 
-    type: str            # fact | idea | goal | event
-    content: str
     domain: str
-    confidence: float
-    created_at: datetime
-    id: Optional[int] = None
+    question: str
 
+    context_snapshot: Dict[str, Any]
 
-@dataclass
-class UserProfile:
-    """Perfil cognitivo del usuario. Tercera dimensión del sistema."""
+    scenarios: List[Dict[str, Any]]
+    chosen_scenario: Optional[str] = None
 
-    verbosity_preference: str = "media"      # baja | media | alta
-    structure_preference: str = "sistémica"  # sistémica | narrativa
-    abstraction_capacity: str = "media"      # alta | media | baja
-    cognitive_style: str = "lineal"          # lineal | arborescente
-    abstraction_tolerance: str = "media"     # alta | media | baja
-    observed_preferences: List[str] = field(default_factory=list)
-    id: Optional[int] = None
+    llm_insight: Dict[str, Any] = field(default_factory=dict)
+    guardian: Dict[str, Any] = field(default_factory=dict)
 
+    expected_outcome: Optional[str] = None
 
-@dataclass
-class FeedbackItem:
-    """Feedback del usuario sobre una interacción."""
+    real_outcome: Optional[str] = None
+    delta: Optional[str] = None
 
-    interaction_id: str
-    rating: int                         # 1-5
-    signals: Dict[str, bool] = field(default_factory=dict)
-    comment: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
-    id: Optional[int] = None
-
+    tags: List[str] = field(default_factory=list)

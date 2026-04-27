@@ -113,13 +113,14 @@ def detect_implicit_signals(interaction_history: List[Dict[str, Any]]) -> List[F
 def apply_learning(
     signals: List[FeedbackSignal],
     current_profile: Optional[Dict[str, Any]] = None,
+    allow_single_shot: bool = False,
 ) -> List[SystemAdjustment]:
     """Aplica ajustes conservadores al sistema basados en señales acumuladas.
 
     Reglas:
         - Señal low confidence → ignorada
-        - Señal medium → ajuste ligero
-        - Señal high + repetida ≥ MIN_REPETITIONS → ajuste real
+        - Señal medium/high + repetida ≥ MIN_REPETITIONS → ajuste real
+        - Si allow_single_shot=True (modo runtime), permite ajuste mínimo con confianza suficiente
     """
     adjustments: List[SystemAdjustment] = []
 
@@ -135,8 +136,12 @@ def apply_learning(
         if avg_confidence < 0.4:
             continue
 
-        # Verificar patrón repetido antes de ajustar
-        if len(instances) < MIN_REPETITIONS:
+        # Verificar patrón repetido antes de ajustar (excepto modo single-shot)
+        if not allow_single_shot and len(instances) < MIN_REPETITIONS:
+            continue
+
+        # Si es single-shot, exigir un mínimo algo mayor para evitar ruido
+        if allow_single_shot and len(instances) < MIN_REPETITIONS and avg_confidence < 0.55:
             continue
 
         # Ajustes por tipo de señal
@@ -158,13 +163,13 @@ def apply_learning(
                 reason=f"missed_key_info reportado {len(instances)} veces (conf={avg_confidence:.2f})",
             ))
 
-        elif signal_type == "confusing":
+        elif signal_type in {"confusing", "confusing_or_incomplete"}:
             adjustments.append(SystemAdjustment(
                 component="simulator",
                 change_description="structure_mode → más jerárquico",
                 change_value=1.0,
                 reversible=True,
-                reason=f"confusing reportado {len(instances)} veces (conf={avg_confidence:.2f})",
+                reason=f"{signal_type} reportado {len(instances)} veces (conf={avg_confidence:.2f})",
             ))
 
         elif signal_type == "good_structure":

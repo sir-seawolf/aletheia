@@ -22,15 +22,37 @@
       "scenarios": [
         {
           "type": "conservative",
-          "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+          "timeline": "0-12 meses",
+          "assumptions": [
+            "Se asume que los 1 hechos son precisos y actuales",
+            "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+            "Se opera sin: Falta información temporal para análisis de alto riesgo"
+          ],
+          "variables": {
+            "ingresos": "incierto",
+            "gastos": "+10%"
+          },
+          "outcome": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
           "confidence": 0.6,
-          "time_horizon": "9 meses"
+          "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+          "time_horizon": "0-12 meses"
         },
         {
           "type": "optimistic",
-          "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+          "timeline": "0-12 meses",
+          "assumptions": [
+            "Se asume que los 1 hechos son precisos y actuales",
+            "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+            "Se opera sin: Falta información temporal para análisis de alto riesgo"
+          ],
+          "variables": {
+            "ingresos": "incierto",
+            "gastos": "-15%"
+          },
+          "outcome": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
           "confidence": 0.5,
-          "time_horizon": "9 meses"
+          "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+          "time_horizon": "0-12 meses"
         }
       ],
       "risks": [
@@ -49,15 +71,37 @@
         "scenarios": [
           {
             "type": "conservative",
-            "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+            "timeline": "0-12 meses",
+            "assumptions": [
+              "Se asume que los 1 hechos son precisos y actuales",
+              "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+              "Se opera sin: Falta información temporal para análisis de alto riesgo"
+            ],
+            "variables": {
+              "ingresos": "incierto",
+              "gastos": "+10%"
+            },
+            "outcome": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
             "confidence": 0.6,
-            "time_horizon": "9 meses"
+            "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+            "time_horizon": "0-12 meses"
           },
           {
             "type": "optimistic",
-            "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+            "timeline": "0-12 meses",
+            "assumptions": [
+              "Se asume que los 1 hechos son precisos y actuales",
+              "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+              "Se opera sin: Falta información temporal para análisis de alto riesgo"
+            ],
+            "variables": {
+              "ingresos": "incierto",
+              "gastos": "-15%"
+            },
+            "outcome": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
             "confidence": 0.5,
-            "time_horizon": "9 meses"
+            "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+            "time_horizon": "0-12 meses"
           }
         ],
         "risks": [
@@ -76,15 +120,37 @@
     "scenarios": [
       {
         "type": "conservative",
-        "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+        "timeline": "0-12 meses",
+        "assumptions": [
+          "Se asume que los 1 hechos son precisos y actuales",
+          "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+          "Se opera sin: Falta información temporal para análisis de alto riesgo"
+        ],
+        "variables": {
+          "ingresos": "incierto",
+          "gastos": "+10%"
+        },
+        "outcome": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
         "confidence": 0.6,
-        "time_horizon": "9 meses"
+        "description": "Escenario conservative para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+        "time_horizon": "0-12 meses"
       },
       {
         "type": "optimistic",
-        "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+        "timeline": "0-12 meses",
+        "assumptions": [
+          "Se asume que los 1 hechos son precisos y actuales",
+          "Se opera sin: Se requieren al menos 2 datos relevantes. Encontrados: 1",
+          "Se opera sin: Falta información temporal para análisis de alto riesgo"
+        ],
+        "variables": {
+          "ingresos": "incierto",
+          "gastos": "-15%"
+        },
+        "outcome": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
         "confidence": 0.5,
-        "time_horizon": "9 meses"
+        "description": "Escenario optimistic para: ¿Puedo dejar mi trabajo en 9 meses? | Basado en 1 hechos",
+        "time_horizon": "0-12 meses"
       }
     ],
     "risks": [
@@ -98,12 +164,13 @@
     "validated": true
   },
   "meta": {
+    "interaction_id": "10f9db8d-d7d6-478e-ad1c-61eb70cd0445",
     "steps_executed": [
       "explore",
       "simulate",
       "validate"
     ],
-    "timestamp": "2026-04-25T12:34:22.311887+00:00",
+    "timestamp": "2026-04-25T16:34:46.287184+00:00",
     "version": "0.3.0"
   }
 }

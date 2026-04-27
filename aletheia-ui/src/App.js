@@ -10,6 +10,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [wsStatus, setWsStatus] = useState("connecting");
   const [sessionId, setSessionId] = useState("");
+  const [snapshot, setSnapshot] = useState(null);
 
   const wsUrl = useMemo(
     () => (sessionId ? `ws://localhost:8000/stream/${sessionId}` : ""),
@@ -29,6 +30,10 @@ export default function App() {
       try {
         const event = JSON.parse(msg.data);
         setEvents((prev) => [...prev, event]);
+
+        if (event?.event_type === "state_snapshot" && event?.payload) {
+          setSnapshot(event.payload);
+        }
       } catch {
         // ignorar eventos malformados
       }
@@ -49,6 +54,7 @@ export default function App() {
     setEvents([]);
     setResult(null);
     setError("");
+    setSnapshot(null);
 
     try {
       const res = await fetch(API_URL, {
@@ -96,6 +102,18 @@ export default function App() {
         </div>
 
         <div className="stream">
+          <div className="event orchestrator">
+            <b>STATE</b> →{" "}
+            {snapshot ? (
+              <span>
+                stage={snapshot?.context?.stage || "unknown"} | risk={snapshot?.risk || "unknown"} | confidence=
+                {snapshot?.confidence ?? "n/a"} | active={(snapshot?.active_agents || []).join(", ") || "none"}
+              </span>
+            ) : (
+              <span>Sin snapshot cognitivo todavía…</span>
+            )}
+          </div>
+
           {events.length === 0 ? (
             <div className="empty">Sin eventos todavía…</div>
           ) : (

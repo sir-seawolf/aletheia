@@ -1,7 +1,7 @@
 """Prompts especializados por función para Aletheia."""
 
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from memory.models import UserProfile
 
 
@@ -117,6 +117,30 @@ Incluye:
 Responde con un párrafo conciso y directo, sin markdown ni explicaciones adicionales.
 """
 
+
+def insight_prompt(context: Dict[str, Any], scenarios: List[Dict], risks: List[str], assumptions: List[str]) -> str:
+    """Prompt para generar insight estratégico global."""
+    profile_instructions = _build_profile_instructions(context.get("user_profile"))
+    
+    scenario_summary = "\n".join([f"- {s.get('type', 'unknown')}: {s.get('outcome', '')[:100]}..." for s in scenarios])
+    
+    return f"""Eres un analista estratégico senior. Tu trabajo es destilar el insight clave del análisis.
+
+Pregunta: {context.get('question', '')}
+Escenarios: {scenario_summary}
+Riesgos: {', '.join(risks)}
+Supuestos: {', '.join(assumptions)}
+
+No resumas. Identifica:
+1. Tensión principal de la decisión
+2. Variable crítica que lo determina todo
+3. Riesgo oculto no mencionado
+4. Recomendación estratégica (bias: conservative/exploratory/aggressive)
+
+{profile_instructions}
+
+JSON:
+{{"insight": "lectura corta penetrante", "key_variable": "la variable", "decision_tension": "la tensión", "recommendation_bias": "conservative"}}"""
 
 def validation_prompt(simulation: Dict[str, Any], risk_config: Dict[str, Any]) -> str:
     """

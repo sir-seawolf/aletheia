@@ -5,10 +5,11 @@ import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from core.orchestrator import process_request
 from core.event_bus import get_event
 from memory.models import UserProfile
+from memory.service import retrieve_session_events
 
 app = FastAPI(title="Aletheia", description="Personal cognitive system for decision-making")
 
@@ -52,10 +53,11 @@ class SimulationResponse(BaseModel):
     """Modelo de salida para respuestas de simulación."""
 
     domain: str
-    risk: dict
-    pipeline: dict
-    final_output: dict
-    meta: dict
+    risk: Dict[str, Any]
+    pipeline: Dict[str, Any]
+    final_output: Dict[str, Any]
+    meta: Dict[str, Any]
+    trace: Dict[str, Any]
 
 
 @app.post("/simulate", response_model=SimulationResponse)
@@ -100,6 +102,15 @@ def root():
 def health_check():
     """Verificación de estado del sistema."""
     return {"status": "ok", "system": "aletheia"}
+
+
+@app.get("/sessions/{session_id}/events")
+def get_session_events(session_id: str, limit: int = 1000):
+    """Recupera el historial de eventos cognitivos de una sesión."""
+    return {
+        "session_id": session_id,
+        "events": retrieve_session_events(session_id=session_id, limit=limit),
+    }
 
 
 @app.websocket("/stream/{session_id}")
