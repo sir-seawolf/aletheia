@@ -79,6 +79,8 @@ class MetaController:
         return scored
 
     def select(self, scored):
+        if not scored:
+            return {"final_output": "no proposals", "selected_brain": "none", "confidence": 0.0}
 
         best = max(scored, key=lambda x: x["score"])
 

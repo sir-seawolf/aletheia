@@ -1,4 +1,4 @@
-1from pathlib import Path
+from pathlib import Path
 import json
 from datetime import datetime
 from core.palace.reader import read_palace

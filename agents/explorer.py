@@ -1,4 +1,13 @@
-"""El analista frío. Busca en memoria, selecciona lo relevante, detecta falta de datos."""
+"""
+Explorer Agent - Cold analyst: memory search, relevance selection, gap detection.
+
+STATUS: IMPLEMENTED (production v1.1)
+Dependencies: core.context, core.llm.router, memory.models, core.event_bus
+Last stable version: v1.1
+
+Responsibility: Extract facts/gaps from memory/context for simulator input.
+Fallback to keyword if LLM fails.
+"""
 
 import json
 from typing import Dict, Any, List, Sequence, Union
@@ -7,13 +16,25 @@ from core.event_bus import build_event, emit_event
 from core.llm import router, exploration_prompt
 from memory.models import MemoryNode
 
-def run(domain: str, question: str, policy: Dict[str, Any] = None, session_id: str = "local") -> Dict[str, Any]:
+def run(domain: str, question: str, policy: Dict[str, Any] = None, session_id: str = "local", memory=None) -> Dict[str, Any]:
+    """
+    Main explorer interface for orchestrator.
+
+    Args:
+        domain (str): Problem domain
+        question (str): Decision question
+        policy (dict, optional): ACO policy dict
+        session_id (str): Event bus session
+
+    Returns:
+        dict: {'facts': list, 'gaps': list, 'confidence': float, 'llm_calls': int}
+    """
     from core.context import Context
 
     context = Context(
         domain=domain,
         question=question,
-        memory=[],
+        memory=memory or [],
         risk={},
         user_profile=None
     )
@@ -27,16 +48,6 @@ def run(domain: str, question: str, policy: Dict[str, Any] = None, session_id: s
 def _run(context, session_id: str = "local") -> Dict[str, Any]:
     domain = getattr(context, "domain", "unknown")
     question = getattr(context, "question", "unknown")
-
-    return {
-        "domain": domain,
-        "question": question,
-        "facts": [],
-        "gaps": [],
-        "confidence": 0.5,
-        "llm_calls": 0  # ACO metric
-    }
-
     """
     Explora la memoria y el contexto para extraer hechos relevantes.
 
