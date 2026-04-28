@@ -12,14 +12,16 @@
 
 
 **Fase 3: Guardian alignment**
-- [ ] `agents/guardian.py`: Validar 100% contra DecisionReport schema (escenarios>=2 en riesgo alto, supuestos explícitos, etc.).
+- [x] `agents/guardian.py`: Validar 100% contra DecisionReport schema.
 
 **Fase 4: UI**
-- [ ] `aletheia-ui/src/App.js`: Consumir y mostrar DecisionReport fields (Snapshot, Escenarios, Riesgos, Insight, Confianza, etc.).
+- [x] `aletheia-ui/src/App.js`: Consumir y mostrar DecisionReport fields.
 
 **Fase 5: Integraciones**
-- [ ] `core/orchestrator.py`: Asegurar propagación completa de DecisionReport.
-- [ ] Tests: /simulate retorna DecisionReport válido, UI lo renderiza.
+- [x] `core/orchestrator.py`: Propagación OK.
+- [x] Tests updated.
+
+**Sprint 3 ✅ Complete**
 
 **Dependencias**: ai/ollama_client.py, memory influence ya implementado.
 

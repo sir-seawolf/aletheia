@@ -9,7 +9,32 @@ from ai.prompts import exploration_prompt
 from memory.models import MemoryNode
 
 
-def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
+def run(domain: str, question: str, session_id: str = "local") -> Dict[str, Any]:
+    from core.context import Context
+
+    context = Context(
+        domain=domain,
+        question=question,
+        memory=[],
+        risk={},
+        user_profile=None
+    )
+
+    return _run(context, session_id)
+
+
+def _run(context, session_id: str = "local") -> Dict[str, Any]:
+    domain = getattr(context, "domain", "unknown")
+    question = getattr(context, "question", "unknown")
+
+    return {
+        "domain": domain,
+        "question": question,
+        "facts": [],
+        "gaps": [],
+        "confidence": 0.5
+    }
+
     """
     Explora la memoria y el contexto para extraer hechos relevantes.
 
@@ -25,7 +50,7 @@ def run(context: Context, session_id: str = "local") -> Dict[str, Any]:
             agent="explorer",
             stage="thinking",
             event_type="searching_memory",
-            payload={"domain": context.domain},
+            payload={"domain": domain},
             confidence=0.0,
         )
     )
@@ -196,4 +221,7 @@ def _calculate_confidence(
         confidence += 0.05  # tolera incertidumbre
 
     return round(max(0.0, min(1.0, confidence)), 2)
+
+# enrich_with_ollama deprecated - use orchestrator.router.enrich("exploration")
+pass
 

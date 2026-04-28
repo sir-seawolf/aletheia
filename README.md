@@ -6,6 +6,14 @@
 
 ## 🚀 Quick Start (Windows/PowerShell)
 
+### 🎯 ONE-CLICK LAUNCHER (New!)
+```
+double-click launcher.bat
+```
+**Menu**: 1=DEMO (DEV/testing), 2=REAL (PROD/live), 3=Tests/Status.
+Auto: pip/npm install, tests, reset DB, API+UI servers, opens browsers (localhost:8000/docs ^& 3000).
+
+### 📋 Manual (Original):
 ```
 cd d:/Proyectos/aletheia-core/aletheia
 pip install -r requirements.txt pytest click uvicorn
@@ -14,6 +22,7 @@ python cli.py status  # Health check
 python cli.py test    # 7/7 PASS
 python cli.py start --mode DEV  # Kernel + API
 ```
+
 
 **Test API:**
 ```

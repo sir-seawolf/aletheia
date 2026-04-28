@@ -90,14 +90,8 @@ export default function App() {
             >
               Analizar
             </button>
-            {result && (
-              <div className="mt-8 p-6 bg-white rounded-xl shadow-lg">
-                <h2 className="text-2xl font-bold mb-4">Análisis completo</h2>
-                <pre className="bg-gray-50 p-4 rounded text-sm overflow-auto max-h-96">
-                  {JSON.stringify(result, null, 2)}
-                </pre>
-              </div>
-            )}
+{result && <DecisionResult report={result} />}
+
           </div>
         )}
       </main>
