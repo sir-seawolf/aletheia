@@ -1,6 +1,8 @@
-"""Control de calidad. Valida outputs, aplica reglas de riesgo, bloquea respuestas pobres."""
+"""Guardian - Adaptive validation with DecisionReport Schema (Sprint3 Fase3)"""
 
 from typing import Dict, Any
+
+from core.schemas.decision_contract import DecisionReport
 
 def validate(simulation: Dict[str, Any], drift_details: dict = None, metrics: dict = None) -> Dict[str, Any]:
     """
@@ -43,9 +45,15 @@ def validate(simulation: Dict[str, Any], drift_details: dict = None, metrics: di
     if llm_insight.get("recommendation_bias", "") == "aggressive":
         issues.append("CONTRADICCION: Bias aggressive detectado")
 
-    # Corrected output
-    corrected_output = simulation.copy()
-    corrected_output["guardian_block"] = len(issues) > 1
+    # Schema validation + Guardian (Sprint3 Fase3)
+    try:
+        report = DecisionReport(**simulation)
+        corrected_output = report.model_dump()
+    except ValueError as e:
+        issues.append(f"SCHEMA ERROR: {str(e)}")
+        corrected_output = simulation.copy()
+
+    corrected_output["guardian_block"] = len(issues) > 0
     corrected_output["guardian_severity"] = "high" if corrected_output["guardian_block"] else "low" if issues else "none"
     corrected_output["guardian_confidence_adjust"] = 0.8 ** len(issues)
     corrected_output["guardian_recommendation"] = "Requiere validacion humana" if corrected_output["guardian_block"] else "Proceder"

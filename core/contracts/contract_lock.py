@@ -19,7 +19,6 @@ REQUIRED_FIELDS = [
     "scenarios",  # List[Dict], min len 2
     "risks",      # Dict[str, float]
     "confidence", # 0.0 <= float <= 1.0
-    "risk_level",
     "guardian_block"  # bool, added by guardian
 ]
 
@@ -35,6 +34,7 @@ def normalize_report(report: Dict[str, Any]) -> Dict[str, Any]:
     report.setdefault("scenarios", [])
     report.setdefault("risks", {})
     report.setdefault("validation_issues", [])
+    report.setdefault("risk_level", "medium")
     
     # Normalize risks List[str] -> Dict[str,float] if needed
     if isinstance(report["risks"], list):
@@ -54,12 +54,16 @@ def validate_final_report(report: Dict[str, Any]) -> Dict[str, Any]:
     """
     report = normalize_report(report)
     
-    # Required fields
+    # 1. Required fields first
     for field in REQUIRED_FIELDS:
         if field not in report:
             raise ContractViolation(f"Missing required field: {field}")
     
-    # Type/shape checks
+    # 2. TYPE VALIDATION (guardian primero)
+    if not isinstance(report["guardian_block"], bool):
+        raise ContractViolation("guardian_block must be bool")
+    
+    # 3. SCENARIOS validation
     if not isinstance(report["scenarios"], list) or len(report["scenarios"]) < 2:
         raise ContractViolation("scenarios must be list with min 2 items")
     
@@ -68,9 +72,6 @@ def validate_final_report(report: Dict[str, Any]) -> Dict[str, Any]:
     
     if not isinstance(report["confidence"], (int, float)) or not 0 <= report["confidence"] <= 1:
         raise ContractViolation("confidence must be float between 0.0 and 1.0")
-    
-    if not isinstance(report["guardian_block"], bool):
-        raise ContractViolation("guardian_block must be bool")
     
     # Add timestamp if missing
     if "timestamp" not in report:

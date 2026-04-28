@@ -1,17 +1,4 @@
-"""Feedback Collector, Analyzer y Learning Engine para Aletheia.
-
-Arquitectura:
-    Feedback (usuario) → analyze → signals → apply_learning → adjustments
-
-Principios:
-    - Cambios pequeños y acumulativos
-    - Reversibles
-    - Patrón repetido antes de ajuste real
-"""
-
-from typing import Dict, Any, List, Optional
-from feedback.models import Feedback, FeedbackSignal, SystemAdjustment
-from memory.service import store_feedback, store_preference
+eference
 from memory.storage import get_recent_feedback_signals
 
 
@@ -241,3 +228,17 @@ def _confidence_from_rating(rating: int) -> float:
     """Convierte rating 1-5 en confianza 0.0-1.0."""
     return min(max((rating - 1) / 4.0, 0.0), 1.0)
 
+"""Feedback Collector, Analyzer y Learning Engine para Aletheia.
+
+Arquitectura:
+    Feedback (usuario) → analyze → signals → apply_learning → adjustments
+
+Principios:
+    - Cambios pequeños y acumulativos
+    - Reversibles
+    - Patrón repetido antes de ajuste real
+"""
+
+from typing import Dict, Any, List, Optional
+from feedback.models import Feedback, FeedbackSignal, SystemAdjustment
+from memory.service import store_feedback, store_pr

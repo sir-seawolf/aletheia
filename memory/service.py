@@ -8,9 +8,9 @@ from memory.decision_store import save_node
 from core.metrics.decision_quality import compute_dqs
 
 def self_evaluate_and_learn(node_id: str, real_outcome: str, user_profile: dict):
-    \"\"\"
+    """
     Closes SEL loop.
-    \"\"\"
+    """
     from memory.decision_store import get_node
     from core.learning.evaluator import evaluate_decision
     from core.learning.rules import adjust_confidence, adjust_memory_weight, adjust_profile
@@ -35,9 +35,27 @@ def self_evaluate_and_learn(node_id: str, real_outcome: str, user_profile: dict)
     return {"error": node.prediction_error, "adjusted": True}
 
 # Legacy (keep minimal)
+_STORE = []
+
+def store_event(event: dict):
+    _STORE.append(event)
+    return len(_STORE)
+
+def store_session_event(event: dict) -> int:
+    return store_event(event)
+
 def retrieve_context(domain: str) -> list:
-    return []
+    return [e for e in _STORE if e.get("domain") == domain]
+
+def retrieve_context_nodes(domain: str) -> list:
+    """Legacy compatibility for healthcheck."""
+    return retrieve_context(domain)
 
 def init_memory():
     init_db()
+
+def store_session_event(event: dict) -> int:
+    """Store session event (compatibility stub)."""
+    from memory.storage import save_session_event
+    return save_session_event(event)
 
