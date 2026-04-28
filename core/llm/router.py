@@ -1,51 +1,75 @@
-from ai.ollama_client import generate as ollama_generate
+"""
+LLMRouter v2+ - Cognitive Stack Completo
+Cache V2 contextual + Palace injection + Evaluator self-reflection + Learning Loop + Palace Search Engine.
+"""
+
 from typing import Optional, Dict, Any
-import requests
+from core.llm.providers.ollama import OllamaProvider
+from core.llm.providers.mock import MockProvider
+from core.llm.cache import LLMCacheV2
+from core.llm.selector import select_provider
+from core.llm.palace_injector import inject_palace
+from core.learning.evaluator import ResponseEvaluator
+from core.llm.learning_loop import LearningLoop
+from core.palace.search import PalaceSearchEngine
+from memory.service import retrieve_context
+
 
 class LLMRouter:
-    def __init__(self, mode: str = "auto"):
-        self.mode = mode  # auto | offline | online | mock
 
-    def _ollama_available(self) -> bool:
-        \"\"\"
-        Ping Ollama health.
-        \"\"\"
-        try:
-            response = requests.get("http://localhost:11434/api/tags", timeout=3)
-            return response.status_code == 200
-        except:
-            return False
+    def __init__(self):
+        self.ollama = OllamaProvider()
+        self.mock = MockProvider()
+        self.cache = LLMCacheV2()
+        self.evaluator = ResponseEvaluator()
+        self.learning = LearningLoop()
+        self.palace_search = PalaceSearchEngine()
 
-    def choose_backend(self, context=None):
-        # PRIORIDAD FIJA
-        if self.mode == "offline":
-            return "ollama"
-        if self.mode == "online":
-            return "online"  # futuro
-        return "ollama" if self._ollama_available() else "mock"
+    def generate(self, task: str, prompt: str, context: Optional[Dict[str, Any]] = None, temp: float = 0.3) -> str:
 
-    def enrich(self, stage: str, input: Dict[str, Any], context=None):
-        backend = self.choose_backend(context)
+        # 1. CACHE V2 CHECK
+        cached = self.cache.get(task, prompt, context or {})
+        if cached:
+            return cached
 
-        if backend == "ollama":
-            prompt = self._build_prompt(stage, input, context)
-            result = ollama_generate(prompt)
-            input["llm_enrichment"] = result
-            return input
+        domain = context.get("domain", "global") if context else "global"
 
-        if backend == "mock":
-            input["llm_enrichment"] = f"[MOCK {stage.upper()}] Deterministic fallback."
-            return input
+        # 2. COGNITIVE CONTEXT RETRIEVAL (PCSE + Memory)
+        palace_hits = self.palace_search.search(domain, prompt)
+        memory_hits = retrieve_context(domain)
 
-        return input
+        # 3. PALACE INJECTION ENRICHMENT
+        enriched_prompt = inject_palace(prompt, domain, task)
 
-    def _build_prompt(self, stage: str, input: Dict[str, Any], context=None):
-        return f"""
-STAGE: {stage}
-DOMAIN: {input.get('domain', 'unknown')}
-QUESTION: {input.get('question', 'unknown')}
-INPUT DATA: {input}
+        # 4. PROVIDER SELECTION INTELIGENTE
+        provider = select_provider(task, enriched_prompt, context.get("confidence", 0.5) if context else 0.5)
 
-Provide structured enrichment for {stage} stage.
-"""
+        # 5. GENERACIÓN INICIAL
+        response = self._call(provider, enriched_prompt, temp)
+
+        # 6. SELF-EVALUATION & RETRY
+        evaluation = self.evaluator.evaluate(enriched_prompt, response, context)
+
+        if evaluation["retry"]:
+            fallback_prompt = enriched_prompt + "\n\nImprove clarity, completeness and relevance."
+            response = self._call(provider, fallback_prompt, temp)
+            evaluation = self.evaluator.evaluate(fallback_prompt, response, context)
+
+        # 7. LEARNING LOOP (Memory + Palace update)
+        self.learning.process(task, prompt, response, evaluation, context)
+
+        # 8. CACHE V2 STORE
+        self.cache.set(task, prompt, context or {}, response)
+
+        return response
+
+    def _call(self, provider: str, prompt: str, temp: float) -> str:
+        if provider == "ollama":
+            return self.ollama.generate(prompt, temp=temp)
+        else:
+            return self.mock.generate(prompt)
+
+
+# Singleton
+router = LLMRouter()
 

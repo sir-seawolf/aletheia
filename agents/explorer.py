@@ -4,8 +4,7 @@ import json
 from typing import Dict, Any, List, Sequence, Union
 from core.context import Context
 from core.event_bus import build_event, emit_event
-from ai.ollama_client import generate
-from ai.prompts import exploration_prompt
+from core.llm import router, exploration_prompt
 from memory.models import MemoryNode
 
 
@@ -115,12 +114,12 @@ def _run(context, session_id: str = "local") -> Dict[str, Any]:
 
 
 def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:
-    """Intenta extraer hechos usando Ollama. Devuelve None si falla."""
+    """Intenta extraer hechos usando LLMRouter. Devuelve None si falla."""
     try:
         prompt = exploration_prompt(context.to_dict())
-        response = generate(prompt, temperature=0.3)
+        response = router.generate(task="exploration", prompt=prompt, context={"domain": context.domain}, temp=0.3)
 
-        if response.startswith("[ERROR]"):
+        if response.startswith("[ERROR]") or response.startswith("[MOCK]"):
             return None
 
         # Limpiar posible markdown
@@ -224,4 +223,3 @@ def _calculate_confidence(
 
 # enrich_with_ollama deprecated - use orchestrator.router.enrich("exploration")
 pass
-
