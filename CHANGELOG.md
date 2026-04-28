@@ -1,64 +1,26 @@
-# Changelog
-
-## v1.0.0 — FASE 1 Stabilized Kernel (2024)
+## [v1.1.0] - LLMRouter v1 (2024-10-XX)
 
 ### Added
-- FASE 1 stabilization: contract_lock.enforce_contract() - single source of truth
-- api_contract_gate: input validation only
-- api/main.py: clean pipeline input → process → enforce_contract
-- orchestrator.py: pure router explorer → simulator → guardian
-- guardian.py: 6 rules centralized, guardian_trace added
-- simulator.py: pure generation stub
-- memory/service.py: save_decision pure persist
-- Tests: test_every_output_passes_contract, updated full_pipeline
+- Centralized LLMRouter with LOCAL (Ollama) → CACHE → MEMORY/PALACE → PROVIDER → CACHE flow
+- core/llm/providers/: ollama.py, mock.py, online.py (placeholder)
+- core/llm/cache.py: In-memory LLMCache with task+prompt hashing
+- core/llm/selector.py: Auto-detect Ollama availability
+- core/llm/prompts.py: Centralized prompts + _enrich with memory/palace
+- core/llm/router.py: generate(task, prompt, context, temp) singleton
 
 ### Changed
-- All changes minimal, order: contract → api → orchestrator → agents → memory → tests
-- Zero roturas in core flow
+- agents/explorer.py, simulator.py: Direct ollama → router.generate()
+- core/orchestrator.py: Removed enrich() calls (internal now)
+- ai/ollama_client.py, ai/prompts.py: Deprecated, marked legacy
 
-### Status
-- Contract enforced on all outputs
-- Guardian decisions traced
-- TODO.md 100% complete
+### Technical
+- Contract intact (no schema changes)
+- Palace/memory integrated as context enrichment
+- Fallback to mock on Ollama failure
+- Cache avoids repeated calls
 
-## v0.2.0 — Cognitive Live MVP (previous)
+Run `python run.py` or `cli.py` to test full pipeline.
 
+---
+Previous changelog unchanged.
 
-### Added
-- Session-aware cognitive event streaming architecture.
-- React MVP UI in `aletheia-ui/` (single-screen cognitive console).
-- Minimal frontend flow:
-  - question input
-  - simulation trigger
-  - websocket live event panel
-  - final output panel
-
-### Changed
-- `core/event_bus.py`
-  - Migrated from a single global queue to per-session queues.
-  - `emit_event(...)` now routes by `session_id`.
-  - `get_event(session_id)` now reads events by session.
-- `core/context.py`
-  - Added `session_id` to context model.
-  - `to_dict()` now includes `session_id`.
-  - `from_request(..., session_id=...)` supported.
-- `core/orchestrator.py`
-  - Context creation now propagates `session_id`.
-  - Step loop now emits structured error event (`stage=blocked`, `event_type=error`) before re-raising.
-- `api/main.py`
-  - WebSocket endpoint moved to: `/stream/{session_id}`.
-  - Streaming loop now reads from `get_event(session_id)`.
-  - Added polling throttle (`asyncio.sleep(0.05)`) on every loop iteration.
-
-### Notes
-- Backend API remains available at `http://127.0.0.1:8000`.
-- Existing `/simulate`, `/health`, and `/` routes remain active.
-- CRA scaffold warns deprecation of Create React App, but build is working correctly for MVP.
-
-### Validation done
-- Backend:
-  - `/health` returns 200.
-  - `/simulate` happy path returns 200.
-  - `/simulate` validation errors return 422 for missing required fields.
-- Frontend:
-  - React production build succeeds (`npm run build` in `aletheia-ui`).

@@ -2,25 +2,29 @@
 
 from typing import Dict, Any, List
 from core.schemas.decision_contract import DecisionReport
-from core.llm.router import generate as llm_generate
+from core.llm import router
 from datetime import datetime
 
-def run(exploration: Dict[str, Any]) -> Dict[str, Any]:
-    \"\"\"
+def run(exploration: Dict[str, Any], policy: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
     Genera escenarios, riesgos, supuestos desde exploration.
-    LLM via router.enrich in orchestrator.
-    \"\"\"
+    LLM via router.generate with policy temp.
+    """
     domain = exploration.get("domain", "unknown")
     question = exploration.get("question", "unknown")
     facts = exploration.get("facts", [])
     gaps = exploration.get("gaps", [])
 
+    temp = policy.get("temperature", 0.3) if policy else 0.3
+
     # LLM via orchestrator.router.enrich("simulation", simulation)
     explain_prompt = f"Provide detailed explanation for {domain} {question}. Facts: {facts}. Gaps: {gaps}."
-    llm_explanation = llm_generate(explain_prompt, domain=domain, task="simulator", temperature=0.3)
+    llm_explanation = router.generate(task="simulator", prompt=explain_prompt, context={"domain": domain}, temp=temp)
+    llm_calls = 1
 
     insight_prompt = f"Summarize insight for {domain}: {question}. Bias?"
-    llm_insight = llm_generate(insight_prompt, domain=domain, task="simulator", temperature=0.2)
+    llm_insight = router.generate(task="simulator", prompt=insight_prompt, context={"domain": domain}, temp=temp)
+    llm_calls += 1
 
     data = DecisionReport(
         timestamp=datetime.now(),
@@ -53,5 +57,6 @@ def run(exploration: Dict[str, Any]) -> Dict[str, Any]:
         prediction="proceed"
     ).model_dump()
     data["exploration_confidence"] = exploration.get("confidence", 0.5)
+    data["llm_calls"] = llm_calls  # ACO metric
     return data
 

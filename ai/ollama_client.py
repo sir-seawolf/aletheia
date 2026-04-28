@@ -1,4 +1,9 @@
-"""Cliente para interactuar con Ollama (inferencia local)."""
+# DEPRECATED: Use core/llm/providers/ollama.py
+# Legacy Ollama client - migrate all imports to new LLMRouter
+"""
+Legacy Ollama client. Migrate to LLMRouter.
+"""
+pass  # Keep for compatibility, but all new code uses router
 
 import requests
 import json

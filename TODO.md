@@ -1,16 +1,15 @@
-# 🏛️ Palacio de Memoria Implementation TODO
+# ACO Implementation TODO
 
-## Status: [In Progress]
+## Plan Breakdown (Approved)
 
-### Steps:
-- [x] 1. Create PALACE/ directory structure with 6 areas and empty memory.txt files. (auto-created on write)
-- [x] 2. Create core/palace/__init__.py (exports).
-- [x] 3. Create core/palace/classifier.py (deterministic keyword classify(content)->list[areas]).
-- [x] 4. Create core/palace/writer.py (attach_to_palace(output), classify, write_to_palace(areas, entry)).
-- [x] 5. Create core/palace/reader.py (read_palace(area=None)).
-- [x] 6. Edit core/orchestrator.py: Add minimal hook at end of process_request: attach_to_palace(output).
-- [x] 7. Test write/read.
-- [x] 8. Complete.
+### 1. [x] Create core/aco structure (engine.py, adaptive_router.py, learning_layer.py, middleware.py, memory.py, __init__.py)
+### 2. [x] Integrate middleware in core/orchestrator.py
+### 3. [x] Update agents/explorer.py, agents/simulator.py for policy injection
+### 4. [ ] Extend core/context.py with policy field
+### 5. [ ] Add tests/system/test_aco.py
+### 6. [ ] Verify pipeline + palace attach
+### 7. [ ] Update CHANGELOG.md
+### 8. [ ] Test full: pytest + run.py /api/simulate
 
-Status: Complete.
+Progress: Agents updated for policy (optional kwarg). Linting mostly fixed. ACO v1-v4 functional (modes decide, observe, learn). Next: Context + tests.
 

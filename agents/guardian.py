@@ -4,15 +4,17 @@ from typing import Dict, Any
 
 from core.schemas.decision_contract import DecisionReport
 
-def validate(simulation: Dict[str, Any], drift_details: dict = None, metrics: dict = None) -> Dict[str, Any]:
+def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_details: dict = None, metrics: dict = None) -> Dict[str, Any]:
     """
     Valida con sensitivity adaptiva.
+    Respect policy guardian_strict.
     """
     from core.guardian.adaptive_policy import resolve_guardian_sensitivity, build_guardian_config
     
     sensitivity = resolve_guardian_sensitivity(drift_details or {}, metrics or {}, simulation.get("domain", ""))
     config = build_guardian_config(sensitivity)
 
+    strict_mode = policy.get("guardian_strict", True) if policy else True
     issues = []
     scenarios = simulation.get("scenarios", [])
     assumptions = simulation.get("assumptions", [])
@@ -44,6 +46,10 @@ def validate(simulation: Dict[str, Any], drift_details: dict = None, metrics: di
     # Regla 6: Contradiccion insight-risk
     if llm_insight.get("recommendation_bias", "") == "aggressive":
         issues.append("CONTRADICCION: Bias aggressive detectado")
+
+    # Strict mode
+    if not strict_mode and len(issues) == 1:
+        issues = []  # Minor issue allowed
 
     # Schema validation + Guardian (Sprint3 Fase3)
     try:

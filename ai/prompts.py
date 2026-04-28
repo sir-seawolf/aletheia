@@ -1,4 +1,9 @@
-"""Prompts especializados por función para Aletheia."""
+# DEPRECATED: Use core/llm/prompts.py
+# Legacy prompts - migrate to central prompts in LLMRouter ecosystem
+"""
+Legacy prompts. All new code uses core.llm.prompts.
+"""
+pass
 
 import json
 from typing import Dict, Any, Optional, List

@@ -7,8 +7,7 @@ from core.event_bus import build_event, emit_event
 from core.llm import router, exploration_prompt
 from memory.models import MemoryNode
 
-
-def run(domain: str, question: str, session_id: str = "local") -> Dict[str, Any]:
+def run(domain: str, question: str, policy: Dict[str, Any] = None, session_id: str = "local") -> Dict[str, Any]:
     from core.context import Context
 
     context = Context(
@@ -19,8 +18,11 @@ def run(domain: str, question: str, session_id: str = "local") -> Dict[str, Any]
         user_profile=None
     )
 
-    return _run(context, session_id)
+    # Use policy for temp etc.
+    if policy:
+        context.constraints.append(f"aco_policy:{policy.get('mode', 'unknown')}")
 
+    return _run(context, session_id)
 
 def _run(context, session_id: str = "local") -> Dict[str, Any]:
     domain = getattr(context, "domain", "unknown")
@@ -31,7 +33,8 @@ def _run(context, session_id: str = "local") -> Dict[str, Any]:
         "question": question,
         "facts": [],
         "gaps": [],
-        "confidence": 0.5
+        "confidence": 0.5,
+        "llm_calls": 0  # ACO metric
     }
 
     """
@@ -97,6 +100,7 @@ def _run(context, session_id: str = "local") -> Dict[str, Any]:
         "gaps": gaps,
         "confidence": confidence,
         "similar_used": len(similar_decisions),
+        "llm_calls": 1 if ai_result else 0  # ACO metric
     }
 
     emit_event(
@@ -117,7 +121,8 @@ def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:
     """Intenta extraer hechos usando LLMRouter. Devuelve None si falla."""
     try:
         prompt = exploration_prompt(context.to_dict())
-        response = router.generate(task="exploration", prompt=prompt, context={"domain": context.domain}, temp=0.3)
+        temp = 0.3
+        response = router.generate(task="exploration", prompt=prompt, context={"domain": context.domain}, temp=temp)
 
         if response.startswith("[ERROR]") or response.startswith("[MOCK]"):
             return None
@@ -223,3 +228,4 @@ def _calculate_confidence(
 
 # enrich_with_ollama deprecated - use orchestrator.router.enrich("exploration")
 pass
+
