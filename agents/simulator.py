@@ -11,7 +11,7 @@ Falls back to placeholder scenarios if LLM JSON parse fails.
 
 import json
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from core.schemas.decision_contract import DecisionReport
 from core.llm import router
 from ai.prompts import simulation_prompt, insight_prompt
@@ -116,13 +116,13 @@ def _parse_simulation(response: str, domain: str, question: str):
             except ValueError:
                 pass
 
-    # Fallback: generic scenarios
+    # Fallback: generic scenarios (LLM did not return valid JSON)
     scenarios = [
-        {"id": "s1", "type": "optimista",    "description": f"Escenario favorable para {domain}: {question[:80]}", "outcome": "positivo",  "probability": 0.55},
-        {"id": "s2", "type": "conservador",  "description": f"Escenario cauto para {domain}: {question[:80]}",     "outcome": "neutral",   "probability": 0.35},
-        {"id": "s3", "type": "pesimista",    "description": f"Escenario adverso para {domain}: {question[:80]}",   "outcome": "negativo",  "probability": 0.10},
+        {"id": "s1", "type": "optimista",   "description": f"Escenario favorable en {domain}: el plan avanza con buenos resultados y sin obstáculos mayores.",          "outcome": "positivo",  "probability": 0.55},
+        {"id": "s2", "type": "conservador", "description": f"Escenario cauto en {domain}: progreso gradual con ajustes necesarios en el camino.",                       "outcome": "neutral",   "probability": 0.35},
+        {"id": "s3", "type": "pesimista",   "description": f"Escenario adverso en {domain}: obstáculos significativos que exigen replantear la estrategia.",            "outcome": "negativo",  "probability": 0.10},
     ]
-    return scenarios, ["Incertidumbre en datos disponibles"], ["Condiciones de mercado estables"]
+    return scenarios, ["Incertidumbre en los datos disponibles"], ["Condiciones del entorno relativamente estables"]
 
 
 def _parse_insight(response: str) -> str:

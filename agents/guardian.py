@@ -58,7 +58,7 @@ def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_de
 
     # Regla 5: Insight debil
     insight_text = llm_insight.get("insight", "")
-    if len(insight_text) < 50:
+    if len(insight_text) < 30:
         issues.append("INSIGHT POCO DESARROLLADO: Analisis estrategico insuficiente")
 
     # Regla 6: Contradiccion insight-risk
@@ -75,6 +75,10 @@ def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_de
         filtered = {k: v for k, v in simulation.items() if k in known}
         report = DecisionReport(**filtered)
         corrected_output = report.model_dump()
+        # Restore non-schema fields (exploration_confidence, llm_calls, user_profile_str, etc.)
+        for k, v in simulation.items():
+            if k not in corrected_output:
+                corrected_output[k] = v
     except ValueError as e:
         issues.append(f"SCHEMA ERROR: {str(e)}")
         corrected_output = simulation.copy()

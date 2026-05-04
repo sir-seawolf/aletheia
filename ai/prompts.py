@@ -127,7 +127,7 @@ Instrucciones:
 {profile_instructions}
 
 Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
-{{"scenarios": [{{"type": "conservative", "description": "...", "confidence": 0.6, "time_horizon": "9 meses"}}], "risks": ["riesgo 1"], "assumptions": ["supuesto 1"]}}
+{{"scenarios": [{{"type": "optimista", "description": "descripción del escenario", "probability": 0.60, "outcome": "positivo", "time_horizon": "9 meses"}}, {{"type": "conservador", "description": "descripción del escenario", "probability": 0.30, "outcome": "neutral", "time_horizon": "9 meses"}}], "risks": ["riesgo 1"], "assumptions": ["supuesto 1"]}}
 """
 
 

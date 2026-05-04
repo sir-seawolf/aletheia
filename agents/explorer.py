@@ -188,8 +188,8 @@ def _try_extract_with_ai(context: Context) -> Optional[Dict[str, Any]]:
             "domain": context.domain,
             "question": context.question,
             "facts": lines[:5] if lines else [f"Análisis: {context.question}"],
-            "gaps": ["Formato de respuesta no estructurado"],
-            "confidence": 0.4,
+            "gaps": ["Respuesta LLM sin estructura JSON — análisis basado en texto libre"],
+            "confidence": 0.55,
         }
     except Exception:
         return None

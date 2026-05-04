@@ -98,9 +98,10 @@ def process_request(domain: str, question: str) -> dict:
             {"type": "conservador", "outcome": "alternative"},
         ]
 
-    output["domain"]   = domain
-    output["question"] = question
-    output["dqs"]      = round(dqs_value, 3)
+    output["domain"]               = domain
+    output["question"]             = question
+    output["dqs"]                  = round(dqs_value, 3)
+    output["exploration_confidence"] = exploration.get("confidence", 0.5)
     output.setdefault("guardian_block", False)
     output["guardian_block"] = bool(output["guardian_block"])
     output.setdefault("risks", {})
