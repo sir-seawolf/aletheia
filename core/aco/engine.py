@@ -1,3 +1,16 @@
+"""
+ACO Engine v1 - Pipeline metrics observer and optimizer recommender.
+
+STATUS: IMPLEMENTED (basic v1)
+Dependencies: .memory.ACOMemory
+Role in pipeline: Post-pipeline observer (after Agents/Guardian).
+Consumes metrics: memory_score (via palace_hits), palace_score, complexity (llm_calls), DQS proxy (guardian_block).
+Effects on context dict: None (observes only, writes to ACO memory for learning_layer).
+INTEGRATION_POINT: Called from orchestrator.process_request() line ~50 after agents run: aco_optimizer.observe(pipeline_state)
+
+Future: Upgrade to v2 full ant colony.
+"""
+
 from typing import Dict, Any, List
 from .memory import ACOMemory
 

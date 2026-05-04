@@ -5,11 +5,16 @@ import json
 
 from .classifier import classify
 
+def json_serializable(obj):
+    if hasattr(obj, 'isoformat'):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not JSON serializable")
+
 def build_entry(output: Dict[str, Any], domain: str) -> Dict[str, Any]:
     '''
     Build entry from system output.
     '''
-    content_str = json.dumps(output, indent=2, ensure_ascii=False)
+    content_str = json.dumps(output, default=json_serializable, indent=2, ensure_ascii=False)
     return {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "areas": [],

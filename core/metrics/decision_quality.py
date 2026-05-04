@@ -19,9 +19,10 @@ def compute_dqs(report: Dict[str, Any]) -> float:
     risks = report.get('risks', {})
 
     # 1. Scenarios diversity (unique outcomes / total)
-    if scenarios:
-        outcomes = set(s.get('outcome', 'unknown') for s in scenarios)
-        diversity = len(outcomes) / len(scenarios)
+    valid_scenarios = [s for s in scenarios if isinstance(s, dict)]
+    if valid_scenarios:
+        outcomes = set(s.get('outcome', 'unknown') for s in valid_scenarios)
+        diversity = len(outcomes) / len(valid_scenarios)
     else:
         diversity = 0.0
 

@@ -1,26 +1,25 @@
-## [v1.1.0] - LLMRouter v1 (2024-10-XX)
+## v1.1.0 - Cognitive Execution Layer (2024)
 
 ### Added
-- Centralized LLMRouter with LOCAL (Ollama) → CACHE → MEMORY/PALACE → PROVIDER → CACHE flow
-- core/llm/providers/: ollama.py, mock.py, online.py (placeholder)
-- core/llm/cache.py: In-memory LLMCache with task+prompt hashing
-- core/llm/selector.py: Auto-detect Ollama availability
-- core/llm/prompts.py: Centralized prompts + _enrich with memory/palace
-- core/llm/router.py: generate(task, prompt, context, temp) singleton
+- **CEL (core/cel/)**: executor.py fuses ACO + LLMRouter
+  - cognition.py: policy fusion
+  - routing.py: adaptive generate
+  - memory_bridge.py: unified memory/palace
+  - cost_model.py: cognitive cost
+  - learning_loop.py: auto-opt
+- orchestrator.py: ACO → CEL → explorer (augmented input)
 
-### Changed
-- agents/explorer.py, simulator.py: Direct ollama → router.generate()
-- core/orchestrator.py: Removed enrich() calls (internal now)
-- ai/ollama_client.py, ai/prompts.py: Deprecated, marked legacy
+### Fixed
+- ACO files syntax (adaptive_router, learning_layer, middleware): unescaped quotes/arrows
 
-### Technical
-- Contract intact (no schema changes)
-- Palace/memory integrated as context enrichment
-- Fallback to mock on Ollama failure
-- Cache avoids repeated calls
+### Updated
+- launcher.bat v1.1: CEL demos [3] Status+Demo, [4] Quick Test
+- README.md: v1.1 FASE 2, CEL capa diagram
+- estado_actual.md: CEL operational
+- TODO.md: Complete
 
-Run `python run.py` or `cli.py` to test full pipeline.
+**Demo:** launcher.bat → 4
+**Full:** launcher.bat → 1/2 (DEMO/REAL CEL active)
 
----
-Previous changelog unchanged.
+Ruta: Palace + Memory + CEL (ACO+Router) + Pipeline + Lock ✅
 

@@ -1,3 +1,15 @@
+"""
+Self Awareness Loop - Post-response reflection and correction.
+
+STATUS: IMPLEMENTED (placeholder v1)
+Dependencies: None (self-contained)
+Role in pipeline: Post-LLM learning loop (LLM → SelfAware → Learning).
+Consumes: plan, response, evaluation, context.
+Writes: decision ('accept/retry/replan') to learning loop.
+Metrics: coherence, confidence_gap, risk_reassessment.
+INTEGRATION_POINT: core/llm/learning_loop.py after response eval: self.self_awareness.evaluate_cycle(plan, response, eval, context)
+"""
+
 class SelfAwareLoop:
 
     def __init__(self):

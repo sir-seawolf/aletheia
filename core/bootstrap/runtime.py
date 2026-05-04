@@ -53,6 +53,27 @@ async def simulate_endpoint(request: Dict):
     validated = validate_final_report(result)
     return validated
 
+@app.get("/system/metrics")
+async def system_metrics():
+    """System performance metrics."""
+    from core.metrics.system_metrics import get_system_metrics
+    return get_system_metrics()
+
+@app.get("/api/profile")
+async def get_profile():
+    """Return the persisted user profile."""
+    from core.identity import user_profile as p
+    return p.load()
+
+@app.patch("/api/profile")
+async def update_profile(updates: Dict):
+    """Merge manual updates into the user profile."""
+    from core.identity import user_profile as p
+    profile = p.load()
+    merged = p.merge(profile, updates)
+    p.save(merged)
+    return merged
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()

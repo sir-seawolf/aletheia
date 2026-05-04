@@ -1,3 +1,15 @@
+"""
+Prefrontal Controller - Executive function layer for intent/strategy/risk.
+
+STATUS: IMPLEMENTED (v1 basic)
+Dependencies: memory.service, core.palace.search
+Role in pipeline: CEL layer, intent analysis before agents (ACO → CEL(PFC) → Explorer).
+Consumes: raw_input/question, memory/palace.
+Writes to context: intent, strategy, risk, prompt_mode.
+Metrics: risk score, palace/memory hits.
+INTEGRATION_POINT: core/cel/executor.py or orchestrator before llm.router: prefrontal.process(domain, question, raw_input)
+"""
+
 from memory.service import retrieve_context
 
 from core.palace.search import PalaceSearchEngine

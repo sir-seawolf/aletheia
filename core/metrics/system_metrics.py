@@ -1,15 +1,13 @@
 """System Metrics - Drift detection and averages."""
 
 from typing import Dict, Any, List
-from memory.decision_store import get_recent_decisions
+from memory.decision_store import get_all
 from core.metrics.decision_quality import compute_dqs
 from core.metrics.drift_detector import detect_drift
 
 def get_system_metrics(num_recent: int = 20) -> Dict[str, Any]:
-    \"\"\"
-    Computes avg DQS, drift, guardian rate.
-    \"\"\"
-    recent = get_recent_decisions(limit=num_recent)
+    """Computes avg DQS, drift, guardian rate."""
+    recent = get_all()[-num_recent:]
     
     dqss = []
     guardian_blocks = 0

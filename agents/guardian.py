@@ -1,4 +1,12 @@
-"""Guardian - Adaptive validation with DecisionReport Schema (Sprint3 Fase3)"""
+"""
+Guardian Agent - Adaptive validation layer with DecisionReport schema enforcement.
+
+STATUS: IMPLEMENTED (production v1.1)
+Dependencies: core.schemas.decision_contract, core.guardian.adaptive_policy
+Last stable version: v1.1
+
+Responsibility: Final validation rules, block risky outputs, confidence adjustment.
+"""
 
 from typing import Dict, Any
 
@@ -6,8 +14,16 @@ from core.schemas.decision_contract import DecisionReport
 
 def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_details: dict = None, metrics: dict = None) -> Dict[str, Any]:
     """
-    Valida con sensitivity adaptiva.
-    Respect policy guardian_strict.
+    Adaptive guardian validation with strictness policy.
+
+    Args:
+        simulation (dict): Simulator DecisionReport input
+        policy (dict, optional): ACO/guardian policy
+        drift_details (dict, optional): Drift metrics
+        metrics (dict, optional): System metrics
+
+    Returns:
+        dict: {'valid': bool, 'block': bool, 'issues': list, 'corrected_output': dict}
     """
     from core.guardian.adaptive_policy import resolve_guardian_sensitivity, build_guardian_config
     
@@ -20,7 +36,9 @@ def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_de
     assumptions = simulation.get("assumptions", [])
     risks = simulation.get("risks", [])
     exploration_confidence = simulation.get("exploration_confidence", 0.5)
-    llm_insight = simulation.get("llm_insight", {})
+    llm_insight = simulation.get("llm_insight", {}) or {}
+    if isinstance(llm_insight, str):
+        llm_insight = {"insight": llm_insight}
 
     # Regla 1: Alto riesgo requiere >=2 escenarios
     if len(scenarios) < 2:
@@ -51,9 +69,11 @@ def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_de
     if not strict_mode and len(issues) == 1:
         issues = []  # Minor issue allowed
 
-    # Schema validation + Guardian (Sprint3 Fase3)
+    # Schema validation — filter extra fields before strict Pydantic check
     try:
-        report = DecisionReport(**simulation)
+        known = set(DecisionReport.model_fields.keys()) if hasattr(DecisionReport, 'model_fields') else set(DecisionReport.__fields__.keys())
+        filtered = {k: v for k, v in simulation.items() if k in known}
+        report = DecisionReport(**filtered)
         corrected_output = report.model_dump()
     except ValueError as e:
         issues.append(f"SCHEMA ERROR: {str(e)}")

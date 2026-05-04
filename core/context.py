@@ -15,6 +15,7 @@ class Context:
         question: str,
         constraints: Optional[List[str]] = None,
         user_profile: Optional[UserProfile] = None,
+        user_profile_str: str = "",
         session_id: str = "local",
     ):
         self.domain = domain
@@ -23,6 +24,7 @@ class Context:
         self.question = question
         self.constraints = constraints or []
         self.user_profile = user_profile
+        self.user_profile_str = user_profile_str
         self.session_id = session_id
 
     def to_dict(self) -> Dict[str, Any]:
@@ -33,6 +35,7 @@ class Context:
             "question": self.question,
             "constraints": self.constraints,
             "user_profile": self.user_profile,
+            "user_profile_str": self.user_profile_str,
             "session_id": self.session_id,
         }
 

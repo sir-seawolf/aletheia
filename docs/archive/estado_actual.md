@@ -4,7 +4,7 @@
 * Pipeline contractual estable (orchestrator → agents → contract_lock)
 * Memory simple operativo
 * Falta capa LLM unificada (Ollama / online / mock)
-* Objetivo: integrar LLM sin romper contrato ni flujo
+
 
 ---
 

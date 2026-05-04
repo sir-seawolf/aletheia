@@ -40,9 +40,12 @@ class SelfAwareCivilization:
         # self.palace.store("PSIQUE", event)  # palace.store needs impl if used
 
     def _civil_decision(self, proposals):
-        # Delegate to ecosystem select
+        """Handle both ecosystem dict output and raw proposals list."""
         from core.ecosystem.cognitive_ecosystem import MetaController
         mc = MetaController()
+        if isinstance(proposals, dict):
+            # Ecosystem already selected
+            return proposals
         return mc.select(proposals)
 
     def _learn_as_society(self, input_data, decision):

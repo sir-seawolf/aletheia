@@ -1,9 +1,9 @@
 """Learning Rules - Adjust based on evaluation."""
 
 def adjust_confidence(profile: dict, confidence_error: float) -> dict:
-    \"\"\"
+    """
     Calibrates confidence bias.
-    \"\"\"
+    """
     confidence_bias = profile.get("confidence_bias", 1.0)
     
     if confidence_error > 0.3:
@@ -15,9 +15,9 @@ def adjust_confidence(profile: dict, confidence_error: float) -> dict:
     return profile
 
 def adjust_memory_weight(node: dict) -> dict:
-    \"\"\"
+    """
     Adjusts memory penalty/boost.
-    \"\"\"
+    """
     prediction_error = node.get("prediction_error", 0.5)
     
     if prediction_error > 0.4:
@@ -28,9 +28,9 @@ def adjust_memory_weight(node: dict) -> dict:
     return node
 
 def adjust_profile(profile: dict, error: float) -> dict:
-    \"\"\"
+    """
     Evolves cognitive profile.
-    \"\"\"
+    """
     risk_aversion = profile.get("risk_aversion", 0.5)
     exploration_bias = profile.get("exploration_bias", 0.5)
     

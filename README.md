@@ -1,8 +1,8 @@
-# Aletheia Kernel v1.0 - Cognitive Decision Engine
+# Aletheia CEL v1.1 - Cognitive Execution Layer Active
 
 ## 🎯 Status: PRODUCTION READY
 
-**FASE 1 COMPLETE: Contract enforced, pipeline stabilized, tests blinded. v1.0.0**
+**FASE 2 CEL COMPLETE: ACO + LLMRouter fused → Cognitive Executive. Ruta actualizada! v1.1.0**
 
 ## 🚀 Quick Start (Windows/PowerShell)
 
@@ -31,6 +31,23 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/simulate" -Method POST -ContentType
 
 **Docs:** http://127.0.0.1:8000/docs
 
+## Arquitectura actual vs roadmap
+**Funciona hoy v1.1 (PRODUCCIÓN):**
+- Pipeline base (orchestrator + agents + guardian)
+- ACO v1 middleware
+- LLM Router + Cache + Palace
+
+**DISEÑADO (esqueleros):**
+- ACO v2 engine, v3 meta
+
+**ROADMAP:**
+- ACO v4+, FSSL, CBL, CGD, CFC (Sprint 4+)
+
+## Limitaciones conocidas
+- LLMCacheV2.get() signature: requires context=dict (known bug from inconsistent calls)
+- Context.__init__() user_id via **kwargs (minor)
+- Pydantic V1 warnings (ignore)
+
 ## 🧠 Architecture Layers (All Delivered)
 
 ### CAPA 1 - Contract Lock
@@ -42,11 +59,11 @@ core/contracts/contract_lock.py
 ```
 **ALL DecisionReport pass here.**
 
-### CAPA 2 - Simple Orchestrator Router
+### CAPA 2 - CEL Orchestrator (New!)
 ```
- /api/simulate → explorer → simulator → guardian → lock → memory
+ /api/simulate → ACO → **CEL (cognitive fusion)** → explorer → simulator → guardian → lock → memory
 ```
-No validation/trace/fallback in orchestrator.
+ACO policy → CEL (memory/palace/cost) → router.generate → augmented input
 
 ### CAPA 3 - Bootstrap System
 ```

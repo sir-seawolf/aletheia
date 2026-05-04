@@ -1,3 +1,15 @@
+"""
+Autonomous Cognition Layer (ACL) - Early decision gate before full LLM.
+
+STATUS: IMPLEMENTED (v1 basic)
+Dependencies: memory.service, core.palace.search
+Role in pipeline: Pre-ACO, decides LLM bypass for low complexity (INPUT → ACL → ACO → CEL).
+Consumes: question complexity, risk from context, memory/palace hits.
+Writes to context: 'mode': 'internal' or 'llm'.
+Metrics: sources memory/palace counts.
+INTEGRATION_POINT: orchestrator.py before apply_aco(): self.acl.process(domain, question, context_dict)
+"""
+
 from memory.service import retrieve_context
 
 from core.palace.search import PalaceSearchEngine

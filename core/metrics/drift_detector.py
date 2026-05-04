@@ -3,9 +3,9 @@
 from typing import List, Dict, Any
 
 def detect_drift(dqs_series: List[float]) -> Dict[str, Any]:
-    \"\"\"
+    """
     Detects 3 drift types on DQS series.
-    \"\"\"
+    """
     if len(dqs_series) < 5:
         return {
             "drift": False,

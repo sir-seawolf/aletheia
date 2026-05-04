@@ -1,8 +1,14 @@
-.App {
-  text-align: center;
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #060610;
+  color: #f9fafb;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-.layout {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding
+textarea:focus { border-color: #4f46e5 !important; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0d0d1a; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }

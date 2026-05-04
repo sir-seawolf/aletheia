@@ -10,13 +10,14 @@ Fallback to keyword if LLM fails.
 """
 
 import json
-from typing import Dict, Any, List, Sequence, Union
+import re
+from typing import Dict, Any, List, Optional, Sequence, Union
 from core.context import Context
 from core.event_bus import build_event, emit_event
 from core.llm import router, exploration_prompt
 from memory.models import MemoryNode
 
-def run(domain: str, question: str, policy: Dict[str, Any] = None, session_id: str = "local", memory=None) -> Dict[str, Any]:
+def run(domain: str, question: str, policy: Optional[Dict[str, Any]] = None, session_id: str = "local", memory=None, user_profile_str: str = "") -> Dict[str, Any]:
     """
     Main explorer interface for orchestrator.
 
@@ -25,21 +26,20 @@ def run(domain: str, question: str, policy: Dict[str, Any] = None, session_id: s
         question (str): Decision question
         policy (dict, optional): ACO policy dict
         session_id (str): Event bus session
+        user_profile_str (str): Pre-formatted profile context for LLM injection
 
     Returns:
         dict: {'facts': list, 'gaps': list, 'confidence': float, 'llm_calls': int}
     """
-    from core.context import Context
-
     context = Context(
         domain=domain,
         question=question,
         memory=memory or [],
         risk={},
-        user_profile=None
+        user_profile=None,
+        user_profile_str=user_profile_str,
     )
 
-    # Use policy for temp etc.
     if policy:
         context.constraints.append(f"aco_policy:{policy.get('mode', 'unknown')}")
 
@@ -107,6 +107,8 @@ def _run(context, session_id: str = "local") -> Dict[str, Any]:
     confidence = _calculate_confidence(facts, gaps, profile)
 
     result = {
+        "domain": domain,
+        "question": context.question,
         "facts": facts,
         "gaps": gaps,
         "confidence": confidence,
@@ -128,32 +130,66 @@ def _run(context, session_id: str = "local") -> Dict[str, Any]:
     return result
 
 
-def _try_extract_with_ai(context: Context) -> Dict[str, Any] | None:
-    """Intenta extraer hechos usando LLMRouter. Devuelve None si falla."""
+def _try_extract_with_ai(context: Context) -> Optional[Dict[str, Any]]:
+    """
+    Intenta extraer hechos usando LLMRouter.
+    Tries strict JSON parse first, then regex extraction, then free-text fallback.
+    Returns None only if the LLM call itself fails.
+    """
     try:
         prompt = exploration_prompt(context.to_dict())
-        temp = 0.3
-        response = router.generate(task="exploration", prompt=prompt, context={"domain": context.domain}, temp=temp)
+        response = router.generate(task="exploration", prompt=prompt, context={"domain": context.domain}, temp=0.3)
 
-        if response.startswith("[ERROR]") or response.startswith("[MOCK]"):
+        if not response or response.startswith("[ERROR]") or response.startswith("[MOCK]"):
             return None
 
-        # Limpiar posible markdown
+        # Strip markdown fences
         cleaned = response.strip()
         if cleaned.startswith("```"):
-            lines = cleaned.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
+            lines = [l for l in cleaned.splitlines() if not l.startswith("```")]
             cleaned = "\n".join(lines).strip()
 
-        data = json.loads(cleaned)
+        # 1. Direct JSON parse
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict):
+                return {
+                    "domain": context.domain,
+                    "question": context.question,
+                    "facts": data.get("facts", []),
+                    "gaps": data.get("gaps", []),
+                    "confidence": float(data.get("confidence", 0.6)),
+                }
+        except ValueError:
+            pass
 
+        # 2. Regex: find first {...} block containing "facts"
+        m = re.search(r'\{[^{}]*"facts"[^{}]*\}', cleaned, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group())
+                return {
+                    "domain": context.domain,
+                    "question": context.question,
+                    "facts": data.get("facts", []),
+                    "gaps": data.get("gaps", []),
+                    "confidence": float(data.get("confidence", 0.5)),
+                }
+            except ValueError:
+                pass
+
+        # 3. Free-text fallback: use non-empty lines as facts
+        lines = [
+            l.strip().lstrip("•-*▸1234567890.)").strip()
+            for l in cleaned.split("\n")
+            if l.strip() and len(l.strip()) > 15
+        ]
         return {
-            "facts": data.get("facts", []),
-            "gaps": data.get("gaps", []),
-            "confidence": data.get("confidence", 0.5),
+            "domain": context.domain,
+            "question": context.question,
+            "facts": lines[:5] if lines else [f"Análisis: {context.question}"],
+            "gaps": ["Formato de respuesta no estructurado"],
+            "confidence": 0.4,
         }
     except Exception:
         return None

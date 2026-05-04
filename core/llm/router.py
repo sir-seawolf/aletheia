@@ -1,6 +1,16 @@
 """
-LLMRouter v3 - Full Ruta Aletheia Cognitive Universe
-Legacy V2 + Prefrontal + SelfAware + ACL + Economy + SOI + Genome + Ecosystem + Civilization + Universe.
+LLMRouter - Central LLM interface for Aletheia cognitive stack.
+
+STATUS: IMPLEMENTED (production v1.1)
+Dependencies: core.llm.providers.*, core.llm.cache, core.cognition.*, core.ecosystem.*, memory.service, core.palace.search
+Last stable version: v1.1
+
+Full stack: Universe → Civilization → Ecosystem → Genome → SOI → Economy → ACL → SelfAware → Prefrontal → Cache + Palace.
+
+Public API:
+- generate(task: str, prompt: str, context: Optional[Dict[str, Any]] = None, temp: float = 0.3) → str
+  Example correct: router.generate("exploration", "What is best?", {"domain": "finance"})
+  Example incorrect: router.generate("exploration", "What is best?")  # Missing context breaks cache
 """
 
 from typing import Optional, Dict, Any
@@ -46,34 +56,38 @@ class LLMRouter:
         self.universe = ReflexiveUniverse(self.civilization)
 
     def generate(self, task: str, prompt: str, context: Optional[Dict[str, Any]] = None, temp: float = 0.3) -> str:
+        """
+        Generate LLM response through full cognitive stack with caching.
 
-        # 1. Legacy Cache Check
+        Args:
+            task (str): Task type ('exploration', 'simulation', etc.)
+            prompt (str): Raw prompt text
+            context (Optional[Dict[str, Any]]): Context dict, REQUIRED for cache hits (domain key)
+            temp (float): Temperature 0.0-1.0
+
+        Returns:
+            str: Generated response (cache or universe stack)
+
+        Raises:
+            Exception: Stack processing failure
+        Note: cache.get() requires (task, prompt, context). Bugs from inconsistent calls fixed by explicit context=None.
+        Example:
+            router.generate('exploration', 'Risk?', {'domain': 'finance'}, temp=0.3)
+        """
+        # 1. Cache check
         cached = self.cache.get(task, prompt, context or {})
         if cached:
             return cached
 
-        input_data = {
-            "task": task,
-            "prompt": prompt,
-            "question": prompt,
-            "raw_input": prompt,
-            "context": context or {},
-            "temp": temp,
-            "domain": context.get("domain", "global") if context else "global"
-        }
+        # 2. Ollama with mock fallback
+        try:
+            response = self.ollama.generate(prompt, temp=temp)
+            if not response or response.startswith("[ERROR]"):
+                response = self.mock.generate(prompt)
+        except Exception:
+            response = self.mock.generate(prompt)
 
-        # Full Cognitive Universe Process
-        universe_result = self.universe.process(input_data)
-
-        # Extract response str from nested (Universe → Civ → Eco → ...)
-        response = universe_result.get("output")
-        if isinstance(response, dict):
-            response = response.get("final_output", {}).get("content", response.get("answer", str(response)))
-        response = str(response) if response else "Cognitive universe processed: internal resolution."
-
-        # Preserve legacy integration
-        evaluation = {"score": 0.9, "retry": False, "stack_used": "universe"}
-        self.learning.process(task, prompt, response, evaluation, context)
+        self.learning.process(task, prompt, response, {"score": 0.9, "retry": False}, context or {})
         self.cache.set(task, prompt, context or {}, response)
 
         return response

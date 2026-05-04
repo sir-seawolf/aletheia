@@ -1,6 +1,11 @@
 
 """
 Cognitive Contract Lock - Single source of truth for DecisionReport validity.
+
+STATUS: IMPLEMENTED (production v1.1)
+Dependencies: core.schemas.decision_contract (DecisionReport)
+Last stable version: v1.1
+
 All outputs MUST pass through here before leaving /simulate.
 Enforces schema, normalizes, blocks invalid reports.
 """
@@ -85,7 +90,18 @@ def freeze_contract_version() -> str:
     return "1.0"
 
 def enforce_contract(report: dict) -> dict:
-    "Enforce full contract: normalize + validate + version."
+    """
+    Final contract enforcement: normalize, validate, version stamp.
+
+    Args:
+        report (dict): Raw output from orchestrator
+
+    Returns:
+        dict: Validated DecisionReport ready for API/memory
+
+    Raises:
+        ContractViolation: If report fails validation
+    """
     report = normalize_report(report)
     validate_final_report(report)
     report["contract_version"] = freeze_contract_version()

@@ -1,9 +1,20 @@
-# DEPRECATED: Use core/llm/providers/ollama.py
-# Legacy Ollama client - migrate all imports to new LLMRouter
 """
-Legacy Ollama client. Migrate to LLMRouter.
+Legacy Ollama client (DEPRECATED).
+
+STATUS: PLACEHOLDER (legacy v1 client)
+Dependencies: requests
+Last stable version: v1.0
+
+Direct Ollama API calls. Migrate to core.llm.router.generate().
+
+Functions:
+- generate(prompt: str, temp: float=0.7, model: Optional[str]=None) → str
+  Target: llama3 local (localhost:11434)
+  Length: variable, timeout 120s
+- healthcheck() → dict
+
+TODO: MIGRATE all calls to router.generate(task, prompt, context)
 """
-pass  # Keep for compatibility, but all new code uses router
 
 import requests
 import json
@@ -27,15 +38,17 @@ def healthcheck() -> dict:
 
 def generate(prompt: str, temperature: float = TEMPERATURE, model: Optional[str] = None) -> str:
     """
-    Genera texto usando Ollama local.
+    Legacy direct Ollama generate (DEPRECATED: use router.generate()).
 
     Args:
-        prompt: Texto de entrada para el modelo
-        temperature: Control de creatividad (0.0 = determinista, 1.0 = creativo)
-        model: Modelo a usar (por defecto el configurado en config.py)
+        prompt (str): Input prompt
+        temperature (float): 0.0 determinist, 1.0 creative
+        model (Optional[str]): e.g. 'llama3', default MODEL
 
     Returns:
-        Texto generado por el modelo
+        str: Generated text or error string
+
+    Target model: llama3 on localhost:11434, ~timeout 120s
     """
     model_name = model or MODEL
 
