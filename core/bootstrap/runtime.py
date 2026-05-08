@@ -155,7 +155,7 @@ def _detect_action(question: str) -> str | None:
     return None
 
 
-def _execute_action_api(action: str, question: str) -> dict:
+def _execute_action_api(action: str, question: str, domain: str = "general") -> dict:
     """Run a doc action and return a simulate-compatible response dict."""
     import re
     from datetime import date
@@ -501,7 +501,7 @@ async def simulate_endpoint(request: Dict):
     # Layer 1 — action requests
     action = _detect_action(question)
     if action:
-        return _execute_action_api(action, question)
+        return _execute_action_api(action, question, domain)
 
     # Layer 2 — conversational
     if _is_conversational_api(question):
@@ -1062,7 +1062,7 @@ async def chat_endpoint(body: Dict):
     # 1. Check for action requests first
     action = _detect_action(message)
     if action:
-        action_result = _execute_action_api(action, message)
+        action_result = _execute_action_api(action, message, domain)
         reply = action_result.get("llm_insight", "Acción ejecutada.")
         session.add("assistant", reply, action=action)
         return {
