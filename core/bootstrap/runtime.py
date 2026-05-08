@@ -99,6 +99,26 @@ _URL_INGEST_RE = _re.compile(
     _re.IGNORECASE,
 )
 
+_CALENDAR_READ_RE = _re.compile(
+    r"(qu[eé]\s+tengo\s+(hoy|ma[ñn]ana|esta\s+semana|el\s+lunes|el\s+martes|el\s+mi[eé]rcoles|el\s+jueves|el\s+viernes)"
+    r"|agenda\s+(de\s+hoy|de\s+ma[ñn]ana|de\s+esta\s+semana|del\s+d[ií]a)"
+    r"|(mis?\s+)?(eventos?|citas?|reuniones?|calendario)\s+(de\s+hoy|de\s+ma[ñn]ana|esta\s+semana|pr[oó]xim\w+)"
+    r"|pr[oó]xim\w+\s+(eventos?|citas?|reuniones?)"
+    r"|qu[eé]\s+hay\s+en\s+(el\s+)?calendario"
+    r"|mu[eé]strame\s+(el\s+)?calendario"
+    r"|tengo\s+algo\s+(hoy|ma[ñn]ana|esta\s+semana))",
+    _re.IGNORECASE,
+)
+
+_CALENDAR_CREATE_RE = _re.compile(
+    r"(crea?r?\s+(una?\s+)?(cita|evento|reuni[oó]n|recordatorio|tarea)\s+(en\s+el\s+calendario|para\s+el|el\s+d[ií]a)"
+    r"|a[ñn]ade?\s+(al\s+calendario|una?\s+(cita|evento|reuni[oó]n))"
+    r"|ag[eé]nda?\s+(una?\s+)?(reuni[oó]n|cita|evento)"
+    r"|programa?\s+(una?\s+)?(reuni[oó]n|cita|evento|llamada)"
+    r"|pon\s+(en\s+el\s+calendario|una?\s+(cita|reuni[oó]n)))",
+    _re.IGNORECASE,
+)
+
 
 def _detect_action(question: str) -> str | None:
     """Return action key if question is a doc/data action request, else None."""
@@ -112,6 +132,10 @@ def _detect_action(question: str) -> str | None:
         return "drive_search"
     if _FINANCIAL_SUMMARY_RE.search(question):
         return "financial_summary"
+    if _CALENDAR_CREATE_RE.search(question):
+        return "calendar_create"
+    if _CALENDAR_READ_RE.search(question):
+        return "calendar_read"
     return None
 
 
@@ -218,6 +242,84 @@ def _execute_action_api(action: str, question: str) -> dict:
                 f"Principales: {vendors}."
             )
         extra["financial_summary"] = s
+
+    elif action == "calendar_read":
+        from core.docs.gcalendar import list_events, today_events, format_summary, is_available as _cal_avail
+        if not _cal_avail():
+            insight = (
+                "Para ver tu calendario necesito las credenciales de Google Calendar. "
+                "Ve a Configuración → Calendario y sube tu credentials.json de Google Cloud Console."
+            )
+        else:
+            q_lower = question.lower()
+            if any(w in q_lower for w in ("hoy", "día", "dia", "today")):
+                result = today_events()
+                label = "hoy"
+            elif any(w in q_lower for w in ("mañana", "manana", "tomorrow")):
+                from core.docs.gcalendar import list_events as _le
+                import datetime as _dt
+                tomorrow_str = (date.today() + _dt.timedelta(days=1)).isoformat()
+                result = _le(days_back=0, days_ahead=2, max_results=10)
+                result["events"] = [e for e in result.get("events", []) if e["start"].startswith(tomorrow_str)]
+                result["count"] = len(result["events"])
+                label = "mañana"
+            else:
+                result = list_events(days_back=0, days_ahead=7)
+                label = "los próximos 7 días"
+            if "error" in result:
+                insight = f"Error al leer el calendario: {result['error']}"
+            elif not result.get("events"):
+                insight = f"No tienes eventos para {label}."
+            else:
+                summary = format_summary(result["events"])
+                insight = f"Tu agenda para {label} ({result['count']} evento(s)):\n{summary}"
+            extra["calendar"] = result
+
+    elif action == "calendar_create":
+        from core.docs.gcalendar import is_available as _cal_avail
+        if not _cal_avail():
+            insight = (
+                "Para crear eventos necesito las credenciales de Google Calendar. "
+                "Ve a Configuración → Calendario."
+            )
+        else:
+            # Parse title and date from the question using LLM
+            from core.llm import router as llm_router
+            parse_prompt = (
+                f"Extrae del siguiente texto el título del evento, la fecha y hora de inicio "
+                f"y la fecha y hora de fin en formato ISO 8601 con zona horaria +02:00 (Europa/Madrid). "
+                f"Si no hay hora, usa 09:00 para inicio y 10:00 para fin. "
+                f"Si no hay fecha, usa mañana. "
+                f"Responde ÚNICAMENTE con JSON: "
+                f'{{\"title\": \"...\", \"start\": \"YYYY-MM-DDTHH:MM:SS+02:00\", \"end\": \"YYYY-MM-DDTHH:MM:SS+02:00\", \"description\": \"...\"}}. '
+                f"Texto: '{question}'"
+            )
+            try:
+                parsed_str = llm_router.generate(task="chat", prompt=parse_prompt, context={"domain": "calendar"}, temp=0.1)
+                import json as _json
+                json_m = re.search(r"\{.*\}", parsed_str, re.DOTALL)
+                if json_m:
+                    ev_data = _json.loads(json_m.group(0))
+                    from core.docs.gcalendar import create_event
+                    result = create_event(
+                        title=ev_data.get("title", "Nuevo evento"),
+                        start_iso=ev_data["start"],
+                        end_iso=ev_data["end"],
+                        description=ev_data.get("description", ""),
+                    )
+                    if result.get("created"):
+                        ev = result["event"]
+                        insight = (
+                            f"Evento creado: «{ev['title']}» el {ev['start'][:10]} "
+                            f"de {ev['start'][11:16]} a {ev['end'][11:16]}."
+                        )
+                        extra["calendar_created"] = result
+                    else:
+                        insight = f"No pude crear el evento: {result.get('error', 'error desconocido')}"
+                else:
+                    insight = "No pude interpretar los datos del evento. Especifica título y fecha con más detalle."
+            except Exception as exc:
+                insight = f"Error al crear el evento: {exc}"
 
     return {
         "domain": "finanzas",
@@ -1008,6 +1110,61 @@ async def bank_summary(year: int = Query(default=0)):
         "net":            round(income + expenses, 2),
         "by_category":    dict(sorted(by_cat.items(), key=lambda x: x[1], reverse=True)),
     }
+
+
+# ── Calendar endpoints ────────────────────────────────────────────────────
+
+@app.get("/api/calendar/today")
+async def calendar_today():
+    from core.docs.gcalendar import today_events, format_summary
+    result = today_events()
+    if result.get("available") and not result.get("error"):
+        result["summary"] = format_summary(result.get("events", []))
+    return result
+
+
+@app.get("/api/calendar/events")
+async def calendar_events(days_ahead: int = Query(default=7), days_back: int = Query(default=0)):
+    from core.docs.gcalendar import list_events, format_summary
+    result = list_events(days_back=days_back, days_ahead=days_ahead)
+    if result.get("available") and not result.get("error"):
+        result["summary"] = format_summary(result.get("events", []))
+    return result
+
+
+@app.post("/api/calendar/events")
+async def calendar_create_event(body: Dict):
+    """
+    Create a calendar event.
+    Body: { "title": "...", "start": "ISO datetime", "end": "ISO datetime",
+            "description": "", "location": "" }
+    """
+    from core.docs.gcalendar import create_event
+    title       = (body.get("title") or "").strip()
+    start_iso   = (body.get("start") or "").strip()
+    end_iso     = (body.get("end") or "").strip()
+    description = body.get("description") or ""
+    location    = body.get("location") or ""
+    if not title or not start_iso or not end_iso:
+        return {"error": "Campos requeridos: title, start, end"}
+    return create_event(title, start_iso, end_iso, description=description, location=location)
+
+
+@app.delete("/api/calendar/events/{event_id}")
+async def calendar_delete_event(event_id: str):
+    from core.docs.gcalendar import delete_event
+    return delete_event(event_id)
+
+
+@app.get("/api/calendar/search")
+async def calendar_search(q: str = Query(default="")):
+    from core.docs.gcalendar import search_events, format_summary
+    if not q:
+        return {"error": "Parámetro 'q' requerido"}
+    result = search_events(q)
+    if result.get("available") and not result.get("error"):
+        result["summary"] = format_summary(result.get("events", []))
+    return result
 
 
 # ── RAG endpoints ─────────────────────────────────────────────────────────
