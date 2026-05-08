@@ -135,6 +135,20 @@ def ingest(
     _save_index(index)
 
     status = "updated" if prev_id else "new"
+
+    # Auto-index in RAG (silent if Ollama/ChromaDB unavailable)
+    try:
+        from core.docs import rag
+        rag.index(new_hash, text, {
+            "domain":   domain,
+            "type":     artifact_type,
+            "source":   source,
+            "filename": filename,
+            "date":     source_date,
+        })
+    except Exception:
+        pass
+
     return IngestResult(status, new_hash, prev_id=prev_id, version=version)
 
 

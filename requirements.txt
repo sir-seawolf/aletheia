@@ -36,3 +36,7 @@ google-auth-oauthlib
 
 # OneDrive online (Sprint D) — only needed if credentials configured
 # msal
+
+# RAG (Retrieval-Augmented Generation)
+chromadb            # vector store (persistent, no server needed)
+# Embeddings via Ollama nomic-embed-text — run: ollama pull nomic-embed-text

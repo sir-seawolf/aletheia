@@ -833,21 +833,36 @@ async def chat_endpoint(body: Dict):
             "history_len":  len(session.history),
         }
 
-    # 2. Build context-aware prompt
+    # 2. RAG context — semantic search over indexed documents
+    rag_context = ""
+    try:
+        from core.docs.rag import search as _rag_search
+        hits = _rag_search(message, n_results=4, domain=domain if domain != "general" else None)
+        relevant = [h for h in hits if h["score"] > 0.40]
+        if relevant:
+            snippets = "\n\n".join(
+                f"[{h['metadata'].get('filename') or h['metadata'].get('source', '?')}]\n{h['text']}"
+                for h in relevant
+            )
+            rag_context = f"\n\nContexto relevante de tus documentos:\n{snippets}"
+    except Exception:
+        pass
+
+    # 3. Build context-aware prompt
     history_ctx = session.context_prompt()
     from core.llm import router as llm_router
 
     if history_ctx:
         prompt = (
             f"Eres Aletheia, una IA cognitiva y acompañante. "
-            f"Dominio actual: {domain}.\n\n"
+            f"Dominio actual: {domain}.{rag_context}\n\n"
             f"Conversación hasta ahora:\n{history_ctx}\n\n"
             f"Responde al último mensaje de forma natural, breve y útil. "
             f"Si necesitas hacer un análisis de decisión profundo, indícalo."
         )
     else:
         prompt = (
-            f"Eres Aletheia, una IA cognitiva. Dominio: {domain}. "
+            f"Eres Aletheia, una IA cognitiva. Dominio: {domain}.{rag_context}\n\n"
             f"Responde de forma natural y útil a: '{message}'"
         )
 
@@ -993,6 +1008,33 @@ async def bank_summary(year: int = Query(default=0)):
         "net":            round(income + expenses, 2),
         "by_category":    dict(sorted(by_cat.items(), key=lambda x: x[1], reverse=True)),
     }
+
+
+# ── RAG endpoints ─────────────────────────────────────────────────────────
+
+@app.post("/api/rag/search")
+async def rag_search_endpoint(body: Dict):
+    """
+    Semantic search over indexed documents.
+    Body: { "query": "...", "n": 5, "domain": "finanzas" }
+    """
+    query   = (body.get("query") or "").strip()
+    n       = int(body.get("n") or 5)
+    domain  = body.get("domain") or None
+    if not query:
+        return {"error": "Campo 'query' vacío."}
+    from core.docs.rag import search as _rag_search, count as _rag_count
+    results = _rag_search(query, n_results=n, domain=domain)
+    return {"query": query, "results": results, "total_indexed": _rag_count()}
+
+
+@app.post("/api/rag/reindex")
+async def rag_reindex_endpoint():
+    """Re-index all artifacts. Requires Ollama running with nomic-embed-text."""
+    import asyncio
+    from core.docs.rag import index_all
+    stats = await asyncio.get_event_loop().run_in_executor(None, index_all)
+    return stats
 
 
 # ── Event streaming WebSocket ──────────────────────────────────────────────
