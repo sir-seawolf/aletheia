@@ -10,7 +10,7 @@ Main endpoint: POST /simulate for decision pipeline.
 
 import asyncio
 import uuid
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -147,4 +147,122 @@ async def stream(websocket: WebSocket, session_id: str):
             await asyncio.sleep(0.05)
     except WebSocketDisconnect:
         return
+
+
+# ── HESTIA endpoints ─────────────────────────────────────────────────────────
+
+from core.hestia.engine import hestia as _hestia
+
+
+class HestiaAnalysisRequest(BaseModel):
+    hours_back: int = 24
+    goal_ids: Optional[list] = None
+
+
+class HestiaGoalRequest(BaseModel):
+    title: str
+    description: str
+    target_value: Optional[float] = None
+    target_unit: Optional[str] = None
+    deadline: Optional[str] = None
+    priority: int = 1
+    notes: Optional[str] = None
+
+
+class HestiaGoalUpdateRequest(BaseModel):
+    current_value: float
+    notes: Optional[str] = None
+
+
+@app.post("/hestia/analyze")
+def hestia_analyze(request: HestiaAnalysisRequest):
+    """Activación bajo demanda de HESTIA."""
+    return _hestia.trigger_analysis(
+        hours_back=request.hours_back,
+        goal_ids=request.goal_ids,
+    )
+
+
+@app.get("/hestia/status")
+def hestia_status():
+    """Estado rápido de HESTIA."""
+    return _hestia.status()
+
+
+@app.post("/hestia/goals")
+def hestia_add_goal(request: HestiaGoalRequest):
+    """Añade un nuevo objetivo estratégico."""
+    goal_id = _hestia.add_goal(request.model_dump())
+    return {"created": True, "goal_id": goal_id}
+
+
+@app.put("/hestia/goals/{goal_id}/progress")
+def hestia_update_progress(goal_id: int, request: HestiaGoalUpdateRequest):
+    """Actualiza progreso hacia un objetivo."""
+    _hestia.update_goal_progress(goal_id, request.current_value, request.notes)
+    return {"updated": True}
+
+
+@app.put("/hestia/goals/{goal_id}")
+def hestia_edit_goal(goal_id: int, updates: dict = Body(...)):
+    """Edita un objetivo existente."""
+    _hestia.edit_goal(goal_id, updates)
+    return {"edited": True}
+
+
+@app.get("/hestia/goals")
+def hestia_get_goals():
+    """Lista objetivos activos con progreso."""
+    return {"goals": _hestia.memory.get_active_goals()}
+
+
+# ── TURBO endpoints ──────────────────────────────────────────────────────────
+
+from core.turbo.mode import turbo_mode as _turbo_mode
+from core.turbo.panel import turbo_panel as _turbo_panel
+
+
+class TurboActivateRequest(BaseModel):
+    strategy: str = "specialist"   # "specialist" | "race" | "panel"
+
+
+@app.post("/turbo/on")
+def turbo_on(request: TurboActivateRequest):
+    """
+    Activa TURBO mode.
+    Lanza un probe paralelo a todos los providers y devuelve
+    cuáles se conectaron, con qué modelo y latencia.
+    """
+    probe = _turbo_panel.probe_all()
+    _turbo_mode.activate(strategy=request.strategy)
+    _turbo_mode.set_probe(probe)
+
+    available = [name for name, d in probe.items() if d["status"] == "ok"]
+
+    return {
+        "turbo": "on",
+        "strategy": request.strategy,
+        "available_count": len(available),
+        "providers": probe,
+        "routing": _turbo_mode.effective_routing(),
+    }
+
+
+@app.post("/turbo/off")
+def turbo_off():
+    """Desactiva TURBO mode. El router vuelve al provider primario configurado."""
+    _turbo_mode.deactivate()
+    return {"turbo": "off"}
+
+
+@app.get("/turbo/status")
+def turbo_status():
+    """Estado actual de TURBO: activo, estrategia, providers y routing."""
+    return {
+        "active":          _turbo_mode.is_active(),
+        "strategy":        _turbo_mode.get_strategy(),
+        "available_count": len(_turbo_mode.available_providers()),
+        "providers":       _turbo_mode.get_probe(),
+        "routing":         _turbo_mode.effective_routing() if _turbo_mode.is_active() else {},
+    }
 

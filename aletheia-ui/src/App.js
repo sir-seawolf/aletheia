@@ -1,270 +1,357 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import "./App.css";
 
-import DashboardKPIs from './components/DashboardKPIs';
-import DqsChart from './components/DqsChart';
-import DecisionList from './components/DecisionList';
-import DecisionResult from './components/DecisionResult';
-import BrainLoader from './components/BrainLoader';
-import ProfileCard from './components/ProfileCard';
+import DecisionResult   from './components/DecisionResult';
+import BrainLoader      from './components/BrainLoader';
+import DocBrowser       from './components/DocBrowser';
+import SettingsPage     from './components/SettingsPage';
+import ThinkingPanel    from './components/ThinkingPanel';
+import ChatView         from './components/ChatView';
+import DashboardKPIs    from './components/DashboardKPIs';
+import DqsChart         from './components/DqsChart';
+import DecisionList     from './components/DecisionList';
+import Sidebar          from './components/Sidebar';
+import CommandPalette   from './components/CommandPalette';
 
 const API_URL = "http://localhost:8000";
 
-const DOMAINS = [
-  { value: "finanzas",    label: "Finanzas" },
-  { value: "carrera",     label: "Carrera" },
-  { value: "tecnologia",  label: "Tecnologia" },
-  { value: "salud",       label: "Salud" },
-  { value: "relaciones",  label: "Relaciones" },
-  { value: "objetivos",   label: "Objetivos" },
-  { value: "aprendizaje", label: "Aprendizaje" },
-  { value: "creatividad", label: "Creatividad" },
-];
+/* ── Navbar ─────────────────────────────────────────────────────────────── */
 
-const NAV_STYLE = {
-  background: '#080811',
-  borderBottom: '1px solid #1f2937',
-  padding: '0 2rem',
-  display: 'flex',
-  alignItems: 'center',
-  gap: '2rem',
-  height: 60,
-};
+function StatusChip({ ok, label }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "2px 8px", borderRadius: 20,
+      background: ok ? "rgba(74,222,128,0.08)" : "rgba(107,114,128,0.08)",
+      border: `1px solid ${ok ? "rgba(74,222,128,0.25)" : "rgba(107,114,128,0.2)"}`,
+      fontSize: 11, color: ok ? "#4ade80" : "#6b7280",
+    }}>
+      <span style={{ fontSize: 8 }}>●</span> {label}
+    </span>
+  );
+}
 
-const navBtnStyle = (active) => ({
-  background: 'none',
-  border: 'none',
-  color: active ? '#818cf8' : '#6b7280',
-  fontWeight: active ? 700 : 400,
-  fontSize: 15,
-  borderBottom: active ? '2px solid #818cf8' : '2px solid transparent',
-  cursor: 'pointer',
-  paddingBottom: 4,
-  letterSpacing: '0.02em',
-});
+function Navbar({ status, onPalette, panelOpen, onTogglePanel }) {
+  return (
+    <nav style={{
+      height: 52,
+      background: "#040408",
+      borderBottom: "1px solid #1f2937",
+      display: "flex",
+      alignItems: "center",
+      padding: "0 16px",
+      gap: 12,
+      position: "sticky", top: 0, zIndex: 40,
+      flexShrink: 0,
+    }}>
+      {/* Logo */}
+      <span style={{ color: "#818cf8", fontWeight: 800, fontSize: 16, letterSpacing: "0.1em", marginRight: 8, flexShrink: 0 }}>
+        ALETHEIA
+      </span>
+
+      {/* Status chips */}
+      <div style={{ display: "flex", gap: 6, flex: 1, flexWrap: "nowrap", overflow: "hidden" }}>
+        <StatusChip ok={status.ollama_ok} label={status.provider || "ollama"} />
+        {status.memory > 0 && (
+          <span style={{ fontSize: 11, color: "#6b7280" }}>🧠 {status.memory}</span>
+        )}
+        {status.docs > 0 && (
+          <span style={{ fontSize: 11, color: "#6b7280" }}>📄 {status.docs}</span>
+        )}
+        {status.fin_total > 0 && (
+          <span style={{ fontSize: 11, color: "#6b7280" }}>💶 {status.fin_total.toFixed(0)}€</span>
+        )}
+      </div>
+
+      {/* Right controls */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <button
+          onClick={onPalette}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 10px", borderRadius: 8,
+            background: "rgba(99,102,241,0.1)",
+            border: "1px solid rgba(99,102,241,0.25)",
+            color: "#818cf8", fontSize: 12, cursor: "pointer",
+          }}
+          title="Paleta de comandos (Ctrl+K)"
+        >
+          ⌘K
+        </button>
+        <button
+          onClick={onTogglePanel}
+          style={{
+            padding: "4px 10px", borderRadius: 8,
+            background: panelOpen ? "rgba(99,102,241,0.15)" : "transparent",
+            border: `1px solid ${panelOpen ? "rgba(99,102,241,0.4)" : "#374151"}`,
+            color: panelOpen ? "#818cf8" : "#6b7280",
+            fontSize: 11, cursor: "pointer",
+          }}
+          title="Panel de pensamiento"
+        >
+          mente {panelOpen ? "◀" : "▶"}
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+/* ── Main App ────────────────────────────────────────────────────────────── */
 
 export default function App() {
-  const [activeView, setActiveView]           = useState('simulate');
-  const [metrics, setMetrics]                 = useState({});
-  const [recentDecisions, setRecentDecisions] = useState([]);
-  const [question, setQuestion]               = useState("");
-  const [domain, setDomain]                   = useState("tecnologia");
-  const [result, setResult]                   = useState(null);
-  const [loading, setLoading]                 = useState(false);
-  const [error, setError]                     = useState(null);
-  const [profile, setProfile]                 = useState({});
+  const [activeView, setActiveView]   = useState("chat");
+  const [domain, setDomain]           = useState("tecnologia");
+  const [question, setQuestion]       = useState("");
+  const [result, setResult]           = useState(null);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState(null);
+  const [profile, setProfile]         = useState({});
+  const [sessionId, setSessionId]     = useState(() => crypto.randomUUID());
+  const [chatSessionId]               = useState(() => "chat-" + crypto.randomUUID());
+  const [panelOpen, setPanelOpen]     = useState(false);
+  const [activeAgent, setActiveAgent] = useState(null);
+  const [agentConf, setAgentConf]     = useState(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [recentQueries, setRecentQueries] = useState([]);
+  const [metrics, setMetrics]         = useState({});
+  const [recentDecisions] = useState([]);
+  const [status, setStatus]           = useState({ provider: "ollama", ollama_ok: false, docs: 0, memory: 0, fin_total: 0 });
 
+  // Boot
   useEffect(() => {
     fetch(`${API_URL}/api/profile`).then(r => r.json()).then(setProfile).catch(() => {});
+    refreshStatus();
+    const t = setInterval(refreshStatus, 30_000);
+
+    const handleNav = (e) => setActiveView(e.detail);
+    window.addEventListener("aletheia:nav", handleNav);
+
+    const handlePalette = () => setPaletteOpen(true);
+    window.addEventListener("aletheia:palette", handlePalette);
+
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("aletheia:nav", handleNav);
+      window.removeEventListener("aletheia:palette", handlePalette);
+    };
   }, []);
 
   useEffect(() => {
-    if (activeView === 'dashboard') {
-      fetch(`${API_URL}/system/metrics`)
-        .then(res => res.json())
-        .then(setMetrics)
-        .catch(() => {});
-      setRecentDecisions([]);
+    if (activeView === "dashboard") {
+      fetch(`${API_URL}/system/metrics`).then(r => r.json()).then(setMetrics).catch(() => {});
     }
   }, [activeView]);
 
+  const refreshStatus = () => {
+    fetch(`${API_URL}/api/status`).then(r => r.json()).then(setStatus).catch(() => {});
+  };
+
   const handleProfileUpdate = (updates) => {
     fetch(`${API_URL}/api/profile`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
     }).then(r => r.json()).then(setProfile).catch(() => {});
   };
 
-  const runSimulation = async () => {
+  const runSimulation = useCallback(async (overrideQuestion) => {
+    const q = (overrideQuestion || question).trim();
+    if (!q) return;
+    const sid = crypto.randomUUID();
+    setSessionId(sid);
+    setActiveAgent("explorer");
+    setAgentConf(0);
     setLoading(true);
     setError(null);
     setResult(null);
+    setActiveView("simulate");
+    setRecentQueries(prev => [q, ...prev.filter(x => x !== q)].slice(0, 10));
     try {
       const res = await fetch(`${API_URL}/api/simulate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, question }),
+        body: JSON.stringify({ domain, question: q, session_id: sid }),
       });
-      if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setResult(data);
       if (data.user_profile) setProfile(data.user_profile);
+      refreshStatus();
     } catch (e) {
-      setError(e.message || "Error al conectar con la API.");
+      setError(e.message);
     } finally {
       setLoading(false);
+      setActiveAgent(null);
     }
+  }, [question, domain]);
+
+  // Command palette handlers
+  const handlePaletteNavigate = (view) => setActiveView(view);
+  const handlePaletteQuery    = (q)    => {
+    setQuestion(q);
+    if (q.length > 8) runSimulation(q);
+    else setActiveView("chat");
+  };
+  const handlePaletteAction   = (action, payload) => {
+    if (action === "open_palette") { setPaletteOpen(true); return; }
+    if (action === "voice")        { setActiveView("simulate"); }
+    if (action === "web_search")   { setActiveView("docs"); }
+    if (action === "domain")       { setDomain(payload); }
   };
 
+  /* ── Render ──────────────────────────────────────────────────────────── */
   return (
-    <div style={{ minHeight: '100vh', background: '#060610', color: '#f9fafb', fontFamily: 'system-ui, sans-serif' }}>
-      {/* Nav */}
-      <nav style={NAV_STYLE}>
-        <span style={{ color: '#818cf8', fontWeight: 800, fontSize: 18, marginRight: 16, letterSpacing: '0.05em' }}>
-          ALETHEIA
-        </span>
-        <button style={navBtnStyle(activeView === 'dashboard')} onClick={() => setActiveView('dashboard')}>
-          Dashboard
-        </button>
-        <button style={navBtnStyle(activeView === 'simulate')} onClick={() => setActiveView('simulate')}>
-          Nueva decision
-        </button>
-      </nav>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#060610", color: "#f9fafb", fontFamily: "system-ui, sans-serif" }}>
 
-      <main style={{ maxWidth: 900, margin: '0 auto', padding: '2.5rem 1.5rem' }}>
+      {/* Navbar */}
+      <Navbar
+        status={status}
+        onPalette={() => setPaletteOpen(true)}
+        panelOpen={panelOpen}
+        onTogglePanel={() => setPanelOpen(o => !o)}
+      />
 
-        {/* Dashboard */}
-        {activeView === 'dashboard' && (
-          <div>
-            <DashboardKPIs metrics={metrics} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }}>
-              <DqsChart data={[]} />
-              <DecisionList decisions={recentDecisions} />
-            </div>
-          </div>
-        )}
+      {/* Body — sidebar + main + thinking panel */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* Simulate */}
-        {activeView === 'simulate' && (
-          <div>
-            <ProfileCard profile={profile} onUpdate={handleProfileUpdate} />
+        {/* Sidebar */}
+        <Sidebar
+          activeView={activeView}
+          onNavigate={setActiveView}
+          domain={domain}
+          onDomain={setDomain}
+          status={status}
+          apiUrl={API_URL}
+        />
 
-            {!loading && !result && (
-              <>
-                <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 28, color: '#f9fafb' }}>
-                  Nueva decision
-                </h1>
+        {/* Main content */}
+        <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem 2rem" }}>
 
-                {/* Domain selector */}
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', fontSize: 12, color: '#9ca3af', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
-                    Dominio
-                  </label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {DOMAINS.map(d => (
-                      <button
-                        key={d.value}
-                        onClick={() => setDomain(d.value)}
-                        style={{
-                          padding: '6px 16px',
-                          borderRadius: 20,
-                          border: `1px solid ${domain === d.value ? '#818cf8' : '#374151'}`,
-                          background: domain === d.value ? 'rgba(129,140,248,0.15)' : 'transparent',
-                          color: domain === d.value ? '#818cf8' : '#9ca3af',
-                          fontSize: 13,
-                          cursor: 'pointer',
-                          fontWeight: domain === d.value ? 600 : 400,
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          {/* CHAT */}
+          {activeView === "chat" && (
+            <ChatView
+              apiUrl={API_URL}
+              sessionId={chatSessionId}
+              domain={domain}
+              onDecisionRequest={(q) => { setQuestion(q); runSimulation(q); }}
+            />
+          )}
 
-                {/* Question textarea */}
-                <textarea
-                  style={{
-                    width: '100%',
-                    padding: '1rem 1.25rem',
-                    background: '#0d0d1a',
-                    border: '1px solid #374151',
-                    borderRadius: 14,
-                    color: '#f9fafb',
-                    fontSize: 16,
-                    resize: 'vertical',
-                    marginBottom: 16,
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    lineHeight: 1.6,
-                  }}
-                  rows="4"
-                  placeholder="Describe tu decision... Ej: Deberia cambiar de trabajo? Tengo X en ahorros, gasto Y, oferta Z"
-                  value={question}
-                  onChange={e => setQuestion(e.target.value)}
-                  disabled={loading}
-                />
-
-                <button
-                  onClick={runSimulation}
-                  disabled={!question.trim() || loading}
-                  style={{
-                    width: '100%',
-                    padding: '14px 0',
-                    background: !question.trim() ? '#1f2937' : 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-                    color: !question.trim() ? '#6b7280' : '#fff',
-                    border: 'none',
-                    borderRadius: 14,
-                    fontSize: 16,
-                    fontWeight: 700,
-                    cursor: !question.trim() ? 'not-allowed' : 'pointer',
-                    letterSpacing: '0.04em',
-                    transition: 'opacity 0.2s',
-                  }}
-                >
-                  Analizar
-                </button>
-              </>
-            )}
-
-            {/* Brain loader during processing */}
-            {loading && (
-              <div style={{ textAlign: 'center', paddingTop: 20 }}>
-                <h2 style={{ color: '#9ca3af', fontSize: 16, fontWeight: 400, marginBottom: 4 }}>
-                  Procesando decision cognitiva...
-                </h2>
-                <p style={{ color: '#4b5563', fontSize: 13, marginBottom: 16 }}>
-                  {question}
-                </p>
-                <BrainLoader domain={domain} />
-              </div>
-            )}
-
-            {/* Error */}
-            {error && (
-              <div style={{
-                marginTop: 16,
-                padding: '1rem',
-                background: 'rgba(127,29,29,0.3)',
-                border: '1px solid rgba(239,68,68,0.4)',
-                borderRadius: 12,
-                color: '#f87171',
-                fontSize: 14,
-              }}>
-                {error}
-              </div>
-            )}
-
-            {/* Result */}
-            {result && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                  <h2 style={{ color: '#9ca3af', fontSize: 14, fontWeight: 400, margin: 0 }}>
-                    Analisis completado
-                  </h2>
-                  <button
-                    onClick={() => { setResult(null); setError(null); }}
+          {/* SIMULATE */}
+          {activeView === "simulate" && (
+            <div>
+              {!loading && !result && (
+                <>
+                  <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 20 }}>Análisis cognitivo</h1>
+                  <textarea
+                    value={question}
+                    onChange={e => setQuestion(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && e.ctrlKey) runSimulation(); }}
+                    placeholder="Describe tu decisión… (Ctrl+Enter para analizar)"
+                    rows={4}
                     style={{
-                      padding: '6px 16px',
-                      background: 'transparent',
-                      border: '1px solid #374151',
-                      borderRadius: 8,
-                      color: '#9ca3af',
-                      fontSize: 13,
-                      cursor: 'pointer',
+                      width: "100%", padding: "1rem", boxSizing: "border-box",
+                      background: "#0d0d1a", border: "1px solid #374151",
+                      borderRadius: 12, color: "#f9fafb", fontSize: 15,
+                      resize: "vertical", outline: "none", lineHeight: 1.6,
+                    }}
+                  />
+                  <button
+                    onClick={() => runSimulation()}
+                    disabled={!question.trim()}
+                    style={{
+                      marginTop: 10, width: "100%", padding: "12px 0",
+                      background: question.trim() ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "#1f2937",
+                      color: question.trim() ? "#fff" : "#4b5563",
+                      border: "none", borderRadius: 12,
+                      fontSize: 15, fontWeight: 700, cursor: question.trim() ? "pointer" : "not-allowed",
                     }}
                   >
-                    Nueva consulta
+                    Analizar
                   </button>
+                </>
+              )}
+
+              {loading && (
+                <div style={{ textAlign: "center", paddingTop: 20 }}>
+                  <p style={{ color: "#4b5563", fontSize: 13, fontStyle: "italic", marginBottom: 8 }}>"{question}"</p>
+                  <BrainLoader domain={domain} activeAgent={activeAgent} agentConfidence={agentConf} />
                 </div>
-                <DecisionResult report={result} />
+              )}
+
+              {error && (
+                <div style={{ marginTop: 16, padding: "1rem", background: "rgba(127,29,29,0.3)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 12, color: "#f87171", fontSize: 14 }}>
+                  {error}
+                </div>
+              )}
+
+              {result && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <span style={{ color: "#6b7280", fontSize: 13 }}>Análisis completado</span>
+                    <button
+                      onClick={() => { setResult(null); setError(null); setQuestion(""); }}
+                      style={{ padding: "5px 14px", background: "transparent", border: "1px solid #374151", borderRadius: 8, color: "#9ca3af", fontSize: 12, cursor: "pointer" }}
+                    >
+                      Nueva consulta
+                    </button>
+                  </div>
+                  <DecisionResult report={result} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* DOCS */}
+          {activeView === "docs" && (
+            <DocBrowser
+              apiUrl={API_URL}
+              domain={domain}
+              onResult={(r) => { setResult(r); setActiveView("simulate"); }}
+            />
+          )}
+
+          {/* DASHBOARD */}
+          {activeView === "dashboard" && (
+            <div>
+              <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 20 }}>Dashboard</h1>
+              <DashboardKPIs metrics={metrics} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20 }}>
+                <DqsChart data={[]} />
+                <DecisionList decisions={recentDecisions} />
               </div>
-            )}
-          </div>
-        )}
-      </main>
+            </div>
+          )}
+
+          {/* SETTINGS */}
+          {activeView === "settings" && (
+            <SettingsPage
+              apiUrl={API_URL}
+              profile={profile}
+              onProfileUpdate={handleProfileUpdate}
+            />
+          )}
+        </main>
+
+        {/* Thinking Panel */}
+        <ThinkingPanel
+          sessionId={sessionId}
+          apiUrl={API_URL}
+          open={panelOpen}
+          onToggle={() => setPanelOpen(o => !o)}
+          onAgentChange={(agent, conf) => { setActiveAgent(agent); setAgentConf(conf); }}
+        />
+      </div>
+
+      {/* Command Palette */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={handlePaletteNavigate}
+        onQuery={handlePaletteQuery}
+        onAction={handlePaletteAction}
+        recentQueries={recentQueries}
+      />
     </div>
   );
 }

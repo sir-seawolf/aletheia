@@ -146,6 +146,7 @@ memory/data/
 # Personal data & runtime state (NEVER commit)
 PALACE/IDENTITY/
 PALACE/CREACION/
+PALACE/voice_models/
 aco_memory.json
 dump.txt
 dump_full.txt

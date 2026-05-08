@@ -4,3 +4,35 @@ uvicorn
 requests
 pytest==8.3.3
 
+# Voice (Sprint 1+2) — all offline, Python 3.14 compatible
+faster-whisper      # STT: Whisper via CTranslate2, model base ~150 MB
+sounddevice         # audio capture and playback
+soundfile           # WAV I/O for TTS output
+numpy               # audio array processing
+piper-tts           # TTS: neural ONNX voices, natural prosody, model ~65 MB
+pyttsx3             # TTS fallback (Windows SAPI, always available)
+
+# piper-tts downloads its voice model automatically on first run via huggingface_hub
+# (already installed as a faster-whisper dependency).
+# Model stored in PALACE/voice_models/piper/ — excluded from git.
+
+# Sprint 3 (voice modulation) will add RVC v2 — separate install when ready.
+
+# Docs ingestion
+pdfplumber          # PDF text extraction (preferred)
+python-docx         # DOCX text extraction
+openpyxl            # XLSX bank statements
+
+# Web tools
+ddgs                # free web search via DuckDuckGo, no API key
+httpx               # async HTTP client for URL ingestion
+beautifulsoup4      # HTML parsing for URL ingestion
+lxml                # fast HTML parser (bs4 backend)
+
+# Google Drive / Gmail online — required if credentials configured
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
+# OneDrive online (Sprint D) — only needed if credentials configured
+# msal

@@ -1,25 +1,62 @@
 # Active context
 
-**Current focus**: Preparación para subida a GitHub. Código limpio, sin datos personales. Pipeline cognitivo funcional end-to-end.
+**Current focus:** Todos los sprints completados y consolidados. Sistema listo para uso y pruebas reales.
 
-**In progress**:
+**Completado en esta sesion (2026-05-05 / 2026-05-06):**
 
-- [x] Conexiones verificadas (SQLite, Ollama, FastAPI, PALACE)
-- [x] Launcher.bat corregido (encoding, tests removidos del arranque, kill de puertos)
-- [x] Frontend compilando (recharts instalado, App.css reparado)
-- [x] Pipeline devuelve domain/question correctos
-- [x] LLMRouter corregido para llamar Ollama directamente
-- [x] .pip-installed ya implementado en launcher.bat (caché de instalación)
-- [x] .gitignore actualizado — PALACE/IDENTITY/, PALACE/CREACION/, dumps excluidos
-- [ ] Verificar guardian_block = False con Ollama real (requiere Ollama corriendo)
+- [x] Sprint 1 — Voz base offline (faster-whisper + Piper TTS + push-to-talk)
+- [x] Sprint 2 — Naturalidad: streaming por frases + pausas naturales
+- [x] Sprint 3 — Modulacion emocional via length_scale/noise_scale en Piper
+- [x] Sprint 4 — Memoria profunda: semantic_graph, emotional_tagger, working_memory, consolidator
+- [x] Sprint 5 — Proactividad: briefing de arranque + deteccion de patrones
+- [x] Sprint 6 — Modelo emocional persistente (PALACE/emotional_state.json)
+- [x] Sprint 7 — Agencia autonoma: 7 acciones con confirmacion de voz
+- [x] Sprint 8 — Civilizacion cognitiva: debate interno multi-brain + persistencia
+- [x] Consolidacion: 5 bugs corregidos (valence logic, coordinator brains, consolidator domain, SQLite context managers, intent parser guard)
 
-**Decisions (recent)**:
+**Arquitectura de voz activa:**
 
-- LLMRouter.generate() bypassea el Universe Stack (devolvía "From memory/palace") y llama Ollama directamente con fallback a mock
-- guardian_strict se activa solo en FULL_PIPELINE mode (no en FAST_PATH)
-- Tests removidos del flujo de arranque del launcher (solo en opción [3])
-- PALACE/IDENTITY/ y PALACE/CREACION/ excluidos de git (datos personales de usuario real)
+```text
+[ENTER] -> record_until_silence -> transcribe (faster-whisper)
+        -> intent_parser.detect() -> accion? -> confirm -> execute
+                                  -> pipeline? -> ecosystem_debate (si compleja)
+                                              -> process_request (CEL + ACO)
+        -> speak(response, emotion=estado_emocional)
+        -> pattern_check -> sugerencia proactiva
+        -> update_from_result -> emotional_state persistido
+```
 
-**Open questions**:
+**Modulos nuevos creados:**
 
-- ¿El guardian bloqueará con Ollama real? (insight debería ser >50 chars con respuesta real)
+- core/voice/ — listener.py, speaker.py, session.py
+- core/memory/ — emotional_tagger.py, working_memory.py, semantic_graph.py, consolidator.py
+- core/cognition/ — proactive_engine.py, emotional_state.py
+- core/agency/ — action_catalog.py, intent_parser.py, action_executor.py
+- core/ecosystem/ — coordinator.py
+
+**Comandos para arrancar:**
+
+```batch
+# launcher.bat -> [1] DEMO o [2] REAL -> [2] Voz
+# o directamente:
+python cli.py voice
+python cli.py voices   # diagnostico de voces disponibles
+```
+
+**Dependencias de voz instaladas:**
+
+```text
+faster-whisper, sounddevice, soundfile, numpy, pyttsx3, piper-tts
+```
+
+**Estado de modelos locales:**
+
+- faster-whisper base: PALACE/voice_models/whisper/ (~150 MB)
+- Piper es_ES-davefx-medium: PALACE/voice_models/piper/ (~65 MB)
+
+**Open questions / proximas mejoras:**
+
+- Wake word personalizado "Aletheia" (requiere entrenar openWakeWord)
+- Piper modelo de mayor calidad (es_ES-sharvard-medium)
+- Agencia Sprint 7b: acciones destructivas con doble confirmacion (git, APIs)
+- Interrupcion de TTS mientras habla (requiere threading)

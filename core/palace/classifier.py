@@ -22,7 +22,7 @@ def classify(content: str) -> List[str]:
     matched_areas = []
     
     for area, keywords in AREAS_KEYWORDS.items():
-        if any(re.search(r"\\b" + re.escape(kw) + r"\\w*", lower_content) for kw in keywords):
+        if any(re.search(r"\b" + re.escape(kw) + r"\w*", lower_content) for kw in keywords):
             matched_areas.append(area)
     
     return sorted(matched_areas)

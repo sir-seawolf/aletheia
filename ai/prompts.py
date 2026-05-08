@@ -152,29 +152,52 @@ Responde con un párrafo conciso y directo, sin markdown ni explicaciones adicio
 """
 
 
+def _is_decision_question(question: str) -> bool:
+    """Heuristic: does this question require a decision analysis?"""
+    import re
+    decision_patterns = re.compile(
+        r"\b(debería|debo|deberia|conviene|vale la pena|merece la pena|"
+        r"comprar|compro|vender|vendo|invertir|invierto|"
+        r"cambiar|cambio|dejar|dejo|aceptar|acepto|rechazar|rechazo|"
+        r"contratar|contrато|despedir|mudarse|arriesgar|"
+        r"alquilar|alquilo|hipoteca|pedir prestado|"
+        r"should i|is it worth|buy|sell|invest|change|accept|reject|"
+        r"riesgo de|riesgos de|análisis de|analizar)\b",
+        re.IGNORECASE,
+    )
+    return bool(decision_patterns.search(question)) or (len(question) > 60 and "?" in question)
+
+
 def insight_prompt(context: Dict[str, Any], scenarios: List[Dict], risks: List[str], assumptions: List[str]) -> str:
-    """Prompt para generar insight estratégico global."""
+    """Prompt para generar insight. Adaptativo: analítico para decisiones, conversacional para el resto."""
+    question = context.get("question", "")
+
+    if not _is_decision_question(question):
+        return f"""Eres Aletheia, una IA cognitiva. Responde a esta pregunta de forma natural, directa y útil en 2-4 frases.
+No uses listas ni estructura formal. No menciones "tensión", "variable crítica" ni "análisis".
+
+Pregunta: {question}
+
+Responde con una sola cadena de texto, sin JSON."""
+
     profile_instructions = _build_profile_instructions(context.get("user_profile"))
-    
-    scenario_summary = "\n".join([f"- {s.get('type', 'unknown')}: {s.get('outcome', '')[:100]}..." for s in scenarios])
-    
-    return f"""Eres un analista estratégico senior. Tu trabajo es destilar el insight clave del análisis.
+    scenario_summary = "\n".join(
+        f"- {s.get('type','?')}: {str(s.get('outcome',''))[:80]}"
+        for s in scenarios[:3]
+    )
+    risks_str   = ", ".join(str(r) for r in risks[:3])   if risks   else "ninguno identificado"
+    assumptions_str = ", ".join(str(a) for a in assumptions[:2]) if assumptions else "ninguno"
 
-Pregunta: {context.get('question', '')}
+    return f"""Eres un analista estratégico. Destila el insight clave en una lectura corta y penetrante.
+
+Decisión: {question}
 Escenarios: {scenario_summary}
-Riesgos: {', '.join(risks)}
-Supuestos: {', '.join(assumptions)}
-
-No resumas. Identifica:
-1. Tensión principal de la decisión
-2. Variable crítica que lo determina todo
-3. Riesgo oculto no mencionado
-4. Recomendación estratégica (bias: conservative/exploratory/aggressive)
-
+Riesgos: {risks_str}
+Supuestos: {assumptions_str}
 {profile_instructions}
 
-JSON:
-{{"insight": "lectura corta penetrante", "key_variable": "la variable", "decision_tension": "la tensión", "recommendation_bias": "conservative"}}"""
+Responde SOLO con este JSON (sin texto adicional, máximo 60 palabras por campo):
+{{"insight": "una frase directa sobre el fondo real de la decisión", "key_variable": "el factor que lo determina todo", "recommendation_bias": "conservative|exploratory|aggressive"}}"""
 
 def validation_prompt(simulation: Dict[str, Any], risk_config: Dict[str, Any]) -> str:
     """

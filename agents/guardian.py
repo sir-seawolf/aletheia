@@ -85,7 +85,8 @@ def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_de
 
     corrected_output["guardian_block"] = len(issues) > 0
     corrected_output["guardian_severity"] = "high" if corrected_output["guardian_block"] else "low" if issues else "none"
-    corrected_output["guardian_confidence_adjust"] = 0.8 ** len(issues)
+    # Cap at 0.90: a validated analysis is reliable, never "100% certain"
+    corrected_output["guardian_confidence_adjust"] = max(0.10, 0.90 - len(issues) * 0.15)
     corrected_output["guardian_recommendation"] = "Requiere validacion humana" if corrected_output["guardian_block"] else "Proceder"
 
     result = {

@@ -45,9 +45,18 @@ def normalize_report(report: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(report["risks"], list):
         report["risks"] = {risk: 0.5 for risk in report["risks"]}
     
-    # Enforce no extra fields (strict)
-    allowed = set(REQUIRED_FIELDS + ["version", "timestamp", "facts", "gaps", "assumptions", 
-                                     "llm_insight", "prediction", "node_id", "contract_version", "guardian_trace"])
+    # Keep all fields the UI needs; strip only truly internal/unsafe keys
+    allowed = set(REQUIRED_FIELDS + [
+        "version", "timestamp", "facts", "gaps", "assumptions",
+        "llm_insight", "llm_explanation", "prediction", "node_id",
+        "contract_version", "guardian_trace",
+        # UI display fields
+        "exploration_confidence", "dqs",
+        "guardian_severity", "guardian_confidence_adjust", "guardian_recommendation",
+        "user_profile",
+        # Pipeline metadata
+        "similar_cases", "memory_influence", "risk_level", "validation_issues",
+    ])
     report = {k: v for k, v in report.items() if k in allowed}
     
     return report
