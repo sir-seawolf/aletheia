@@ -1378,6 +1378,40 @@ async def calendar_search(q: str = Query(default="")):
     return result
 
 
+# ── Notification endpoints ────────────────────────────────────────────────
+
+@app.post("/api/notifications/register")
+async def notifications_register(body: Dict):
+    """Register a user so they receive proactive notifications."""
+    from core.notifications import register
+    user_id = (body.get("user_id") or "default").strip()
+    register(user_id)
+    return {"registered": user_id}
+
+
+@app.get("/api/notifications/poll")
+async def notifications_poll(user_id: str = Query(default="default")):
+    """Drain and return all pending notifications for a user."""
+    from core.notifications import poll
+    return poll(user_id)
+
+
+@app.post("/api/notifications/push")
+async def notifications_push(body: Dict):
+    """Push a notification to a user (or all users if user_id is omitted)."""
+    from core.notifications import push, push_all
+    text    = (body.get("text") or "").strip()
+    source  = body.get("source") or "system"
+    user_id = body.get("user_id")
+    if not text:
+        return {"error": "Campo 'text' vacío."}
+    if user_id:
+        push(text, source, user_id)
+    else:
+        push_all(text, source)
+    return {"queued": True}
+
+
 # ── RAG endpoints ─────────────────────────────────────────────────────────
 
 @app.post("/api/rag/search")

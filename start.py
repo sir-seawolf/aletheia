@@ -267,6 +267,31 @@ def start_web(mode: str):
         _ok("Servidores detenidos")
 
 
+def start_telegram():
+    config = ROOT / "PALACE" / "config" / "telegram.json"
+    if not config.exists():
+        _err("No se encontró PALACE/config/telegram.json")
+        _info(
+            'Crea el archivo con tu token de @BotFather:\n'
+            '  {\n'
+            '    "token": "TU_TOKEN",\n'
+            '    "allowed_user_ids": [],\n'
+            '    "admin_user_id": null\n'
+            '  }'
+        )
+        return None
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    _info("Arrancando bot de Telegram en background…")
+    proc = subprocess.Popen(
+        [sys.executable, "tools/telegram_bot.py"],
+        env=env,
+        creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0,
+    )
+    _ok("Bot de Telegram arrancado")
+    return proc
+
+
 def start_voice(mode: str):
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -338,11 +363,12 @@ def main():
         description="Aletheia launcher",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("--voice",  action="store_true", help="Sesión de voz en terminal")
-    parser.add_argument("--demo",   action="store_true", help="Modo demo (LLM mock, sin Ollama)")
-    parser.add_argument("--reset",  action="store_true", help="Reiniciar base de datos")
-    parser.add_argument("--status", action="store_true", help="Mostrar estado y salir")
-    parser.add_argument("--stop",   action="store_true", help="Matar servidores en puertos 8000/3000")
+    parser.add_argument("--voice",    action="store_true", help="Sesión de voz en terminal")
+    parser.add_argument("--demo",     action="store_true", help="Modo demo (LLM mock, sin Ollama)")
+    parser.add_argument("--reset",    action="store_true", help="Reiniciar base de datos")
+    parser.add_argument("--status",   action="store_true", help="Mostrar estado y salir")
+    parser.add_argument("--stop",     action="store_true", help="Matar servidores en puertos 8000/3000")
+    parser.add_argument("--telegram", action="store_true", help="Arrancar bot de Telegram junto al servidor web")
     args = parser.parse_args()
 
     print()
@@ -372,6 +398,8 @@ def main():
         start_voice(mode)
     else:
         step_ui_deps()
+        if args.telegram:
+            start_telegram()
         start_web(mode)
 
 

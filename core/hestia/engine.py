@@ -30,6 +30,18 @@ class HestiaEngine:
         })
         clean = {k: v for k, v in result.items() if k != "goals_used"}
         clean["goals_used"] = [g.get("title") for g in result.get("goals_used", [])]
+
+        # Notify connected channels (Telegram, etc.) when analysis score is notable
+        score = result.get("alignment_score", 0.5)
+        verdict = result.get("verdict", "")
+        if score < 0.35 or score > 0.80:
+            try:
+                from core.notifications import push_all
+                icon = "⚠️" if score < 0.35 else "✅"
+                push_all(f"{icon} HESTIA: {verdict[:300]}", source="hestia")
+            except Exception:
+                pass
+
         return clean
 
     def status(self) -> Dict[str, Any]:

@@ -40,3 +40,6 @@ google-auth-oauthlib
 # RAG (Retrieval-Augmented Generation)
 chromadb            # vector store (persistent, no server needed)
 # Embeddings via Ollama nomic-embed-text — run: ollama pull nomic-embed-text
+
+# Telegram bot (optional — only needed with --telegram flag)
+python-telegram-bot # async Telegram bot API v20+
