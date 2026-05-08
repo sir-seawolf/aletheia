@@ -99,6 +99,20 @@ _URL_INGEST_RE = _re.compile(
     _re.IGNORECASE,
 )
 
+_FISCAL_RE = _re.compile(
+    r"(cu[aá]nto\s+(pago|debo|tengo\s+que\s+pagar)\s+(de\s+)?(irpf|renta|impuesto|hacienda|iva)"
+    r"|declaraci[oó]n\s+de\s+la\s+renta"
+    r"|modelo\s+(130|303|111|115)"
+    r"|pago\s+fraccionado"
+    r"|iva\s+(del?\s+trimestre|trimestral|a\s+ingresar|a\s+pagar)"
+    r"|calcula?\s+(el\s+)?(irpf|iva|impuesto)"
+    r"|tipo\s+efectivo\s+(de\s+)?(irpf|impuesto)"
+    r"|retenci[oó]n\s+(de\s+)?(irpf|factura)"
+    r"|resumen\s+fiscal"
+    r"|cu[aá]nto\s+(me\s+queda|queda)\s+(pagar\s+a\s+hacienda|de\s+irpf|de\s+iva))",
+    _re.IGNORECASE,
+)
+
 _CALENDAR_READ_RE = _re.compile(
     r"(qu[eé]\s+tengo\s+(hoy|ma[ñn]ana|esta\s+semana|el\s+lunes|el\s+martes|el\s+mi[eé]rcoles|el\s+jueves|el\s+viernes)"
     r"|agenda\s+(de\s+hoy|de\s+ma[ñn]ana|de\s+esta\s+semana|del\s+d[ií]a)"
@@ -132,6 +146,8 @@ def _detect_action(question: str) -> str | None:
         return "drive_search"
     if _FINANCIAL_SUMMARY_RE.search(question):
         return "financial_summary"
+    if _FISCAL_RE.search(question):
+        return "fiscal"
     if _CALENDAR_CREATE_RE.search(question):
         return "calendar_create"
     if _CALENDAR_READ_RE.search(question):
@@ -242,6 +258,128 @@ def _execute_action_api(action: str, question: str) -> dict:
                 f"Principales: {vendors}."
             )
         extra["financial_summary"] = s
+
+    elif action == "fiscal":
+        from core.docs import fiscal
+        q_lower = question.lower()
+
+        # IVA puntual: "¿cuánto es el IVA de 1500€?"
+        amount_m = re.search(r"(\d[\d.,]*)\s*(?:€|euros?)?", question)
+
+        if any(w in q_lower for w in ("modelo 303", "iva trimestral", "iva del trimestre", "iva a ingresar", "modelo303")):
+            # Pide datos numéricos — devuelve explicación de qué introducir
+            year_m = re.search(r"\b(20\d{2})\b", question)
+            yr = int(year_m.group(1)) if year_m else date.today().year
+            trim_m = re.search(r"\b([1-4])[ºoer°]?\s*trimestre\b|[tT](\d)\b", question)
+            trim = int((trim_m.group(1) or trim_m.group(2)) if trim_m else ((date.today().month - 1) // 3 + 1))
+            insight = (
+                f"Para el Modelo 303 T{trim}/{yr} necesito:\n"
+                "  • Base imponible gravada al 21% (ingresos sin IVA)\n"
+                "  • Base imponible gravada al 10% (si aplica)\n"
+                "  • IVA soportado total (IVA de tus facturas de compra)\n\n"
+                "Dime los importes y lo calculo al momento.\n"
+                "Ejemplo: «Base 21%: 8000€, IVA soportado: 420€»"
+            )
+            # Try auto-calc if we have artifact data
+            try:
+                res = fiscal.resumen_fiscal(yr)
+                if res["iva_repercutido"] > 0:
+                    r = fiscal.calcular_iva(
+                        base_imponible_21=res["ingresos_brutos"],
+                        iva_soportado=res["iva_soportado"],
+                        trimestre=trim,
+                        year=yr,
+                    )
+                    insight = fiscal.format_iva(r) + f"\n\n⚠️ {res['advertencia']}"
+                    extra["iva"] = r.to_dict()
+            except Exception:
+                pass
+
+        elif any(w in q_lower for w in ("modelo 130", "pago fraccionado", "modelo130")):
+            year_m = re.search(r"\b(20\d{2})\b", question)
+            yr = int(year_m.group(1)) if year_m else date.today().year
+            trim_m = re.search(r"\b([1-4])[ºoer°]?\s*trimestre\b|[tT](\d)\b", question)
+            trim = int((trim_m.group(1) or trim_m.group(2)) if trim_m else ((date.today().month - 1) // 3 + 1))
+            try:
+                res = fiscal.resumen_fiscal(yr)
+                r = fiscal.calcular_modelo_130(
+                    ingresos_acumulados=res["ingresos_brutos"],
+                    gastos_acumulados=res["gastos_deducibles"],
+                    trimestre=trim,
+                    year=yr,
+                )
+                insight = fiscal.format_modelo130(r) + f"\n\n⚠️ {res['advertencia']}"
+                extra["modelo130"] = r.to_dict()
+            except Exception:
+                insight = (
+                    f"Modelo 130 T{trim}/{yr}: necesito ingresos y gastos acumulados del año. "
+                    "Importa tus facturas primero o dime los importes directamente."
+                )
+
+        elif any(w in q_lower for w in ("iva de", "iva del", "cuánto es el iva", "cuanto es el iva", "precio con iva", "sin iva")):
+            if amount_m:
+                raw = amount_m.group(1).replace(".", "").replace(",", ".")
+                try:
+                    base = float(raw)
+                    tipo = "reducido" if any(w in q_lower for w in ("10%", "reducido")) else \
+                           "superreducido" if any(w in q_lower for w in ("4%", "superreducido")) else "general"
+                    if "sin iva" in q_lower or "base" in q_lower:
+                        r = fiscal.desglosar_iva(base, tipo)
+                        insight = (
+                            f"Desglose IVA ({r['porcentaje']}%):\n"
+                            f"  Total con IVA: {r['total']:,.2f} €\n"
+                            f"  Base imponible: {r['base']:,.2f} €\n"
+                            f"  IVA: {r['iva']:,.2f} €"
+                        )
+                    else:
+                        r = fiscal.precio_con_iva(base, tipo)
+                        insight = (
+                            f"IVA {tipo} ({r['porcentaje']}%) sobre {r['base']:,.2f} €:\n"
+                            f"  IVA: {r['iva']:,.2f} €\n"
+                            f"  Total: {r['total']:,.2f} €"
+                        )
+                    extra["iva_calculo"] = r
+                except ValueError:
+                    insight = "No pude leer el importe. Escríbelo así: «IVA de 1500€»"
+            else:
+                insight = "¿Sobre qué importe quieres calcular el IVA? Dime la cantidad."
+
+        else:
+            # IRPF / renta general
+            year_m = re.search(r"\b(20\d{2})\b", question)
+            yr = int(year_m.group(1)) if year_m else date.today().year
+            amount_bruto = None
+            if amount_m:
+                raw = amount_m.group(1).replace(".", "").replace(",", ".")
+                try:
+                    amount_bruto = float(raw)
+                except ValueError:
+                    pass
+
+            autonomo = any(w in q_lower for w in ("autónomo", "autonomo", "freelance", "cuenta propia"))
+
+            if amount_bruto:
+                r = fiscal.calcular_irpf(amount_bruto, autonomo=autonomo)
+                insight = fiscal.format_irpf(r)
+                extra["irpf"] = r.to_dict()
+            else:
+                # Try from artifact data
+                try:
+                    res = fiscal.resumen_fiscal(yr)
+                    if res["ingresos_brutos"] > 0:
+                        r_obj = fiscal.IRPFResult(**{k: v for k, v in res["irpf"].items() if k != "tipo_efectivo_pct"})
+                        insight = fiscal.format_irpf(r_obj) + f"\n\n⚠️ {res['advertencia']}"
+                        extra["fiscal_resumen"] = res
+                    else:
+                        insight = (
+                            "No tengo ingresos registrados para estimar el IRPF. "
+                            "Importa tus facturas o dime tu renta bruta anual: «IRPF de 35000€»"
+                        )
+                except Exception:
+                    insight = (
+                        "Dime tu renta bruta anual y te calculo el IRPF. "
+                        "Ejemplo: «¿cuánto IRPF pago con 40.000€ brutos?»"
+                    )
 
     elif action == "calendar_read":
         from core.docs.gcalendar import list_events, today_events, format_summary, is_available as _cal_avail
@@ -1110,6 +1248,79 @@ async def bank_summary(year: int = Query(default=0)):
         "net":            round(income + expenses, 2),
         "by_category":    dict(sorted(by_cat.items(), key=lambda x: x[1], reverse=True)),
     }
+
+
+# ── Fiscal endpoints ──────────────────────────────────────────────────────
+
+@app.post("/api/fiscal/irpf")
+async def fiscal_irpf(body: Dict):
+    """
+    Body: { "renta_bruta": 40000, "autonomo": false, "cuotas_ss": 0,
+            "otros_gastos": 0, "hijos": 0, "edad": 40 }
+    """
+    from core.docs.fiscal import calcular_irpf, format_irpf
+    try:
+        r = calcular_irpf(
+            renta_bruta=float(body.get("renta_bruta") or 0),
+            autonomo=bool(body.get("autonomo", False)),
+            cuotas_ss=float(body.get("cuotas_ss") or 0),
+            otros_gastos_deducibles=float(body.get("otros_gastos") or 0),
+            hijos=int(body.get("hijos") or 0),
+            edad=int(body.get("edad") or 40),
+        )
+        return {**r.to_dict(), "summary": format_irpf(r)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.post("/api/fiscal/iva")
+async def fiscal_iva(body: Dict):
+    """
+    Body: { "base_21": 8000, "base_10": 0, "base_4": 0,
+            "iva_soportado": 420, "trimestre": 1, "year": 2024 }
+    """
+    from core.docs.fiscal import calcular_iva, format_iva
+    try:
+        r = calcular_iva(
+            base_imponible_21=float(body.get("base_21") or 0),
+            base_imponible_10=float(body.get("base_10") or 0),
+            base_imponible_4=float(body.get("base_4") or 0),
+            iva_soportado=float(body.get("iva_soportado") or 0),
+            trimestre=int(body.get("trimestre") or 1),
+            year=int(body.get("year") or 2024),
+        )
+        return {**r.to_dict(), "summary": format_iva(r)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.post("/api/fiscal/modelo130")
+async def fiscal_modelo130(body: Dict):
+    """
+    Body: { "ingresos": 20000, "gastos": 5000,
+            "pagos_anteriores": 1500, "trimestre": 2, "year": 2024 }
+    """
+    from core.docs.fiscal import calcular_modelo_130, format_modelo130
+    try:
+        r = calcular_modelo_130(
+            ingresos_acumulados=float(body.get("ingresos") or 0),
+            gastos_acumulados=float(body.get("gastos") or 0),
+            pagos_anteriores=float(body.get("pagos_anteriores") or 0),
+            trimestre=int(body.get("trimestre") or 1),
+            year=int(body.get("year") or 2024),
+        )
+        return {**r.to_dict(), "summary": format_modelo130(r)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.get("/api/fiscal/resumen")
+async def fiscal_resumen(year: int = Query(default=2024)):
+    from core.docs.fiscal import resumen_fiscal
+    try:
+        return resumen_fiscal(year)
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 # ── Calendar endpoints ────────────────────────────────────────────────────
