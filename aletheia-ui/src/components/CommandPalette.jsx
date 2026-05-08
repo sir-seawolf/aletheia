@@ -26,6 +26,9 @@ const COMMANDS = [
   { id: "act:search",   label: "Buscar en internet…",     icon: "🔍", group: "Acciones",   action: "action", payload: "web_search" },
   { id: "act:summary",  label: "Resumen financiero",      icon: "💶", group: "Acciones",   action: "query", payload: `resumen de gastos ${new Date().getFullYear()}` },
   { id: "act:artifacts",label: "Ver artefactos",          icon: "🗄️",  group: "Acciones",   action: "nav",    payload: "docs" },
+  { id: "act:help",     label: "Ayuda y guía de uso",     icon: "❓", group: "Acciones",   action: "nav",    payload: "help" },
+  { id: "act:fiscal",   label: "Calcular IRPF/IVA",       icon: "🧮", group: "Acciones",   action: "query",  payload: "Resumen fiscal de este año" },
+  { id: "act:agenda",   label: "Ver agenda de hoy",       icon: "📅", group: "Acciones",   action: "query",  payload: "¿Qué tengo hoy?" },
   // Domains
   ...["finanzas","carrera","tecnologia","salud","relaciones","objetivos","aprendizaje","creatividad"].map(d => ({
     id:      `domain:${d}`,

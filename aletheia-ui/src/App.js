@@ -12,6 +12,7 @@ import DqsChart         from './components/DqsChart';
 import DecisionList     from './components/DecisionList';
 import Sidebar          from './components/Sidebar';
 import CommandPalette   from './components/CommandPalette';
+import HelpPanel        from './components/HelpPanel';
 
 const API_URL = "http://localhost:8000";
 
@@ -31,7 +32,7 @@ function StatusChip({ ok, label }) {
   );
 }
 
-function Navbar({ status, onPalette, panelOpen, onTogglePanel }) {
+function Navbar({ status, onPalette, onHelp, panelOpen, onTogglePanel }) {
   return (
     <nav style={{
       height: 52,
@@ -65,6 +66,20 @@ function Navbar({ status, onPalette, panelOpen, onTogglePanel }) {
 
       {/* Right controls */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <button
+          onClick={onHelp}
+          style={{
+            padding: "4px 10px", borderRadius: 8,
+            background: "transparent",
+            border: "1px solid #374151",
+            color: "#6b7280", fontSize: 13, cursor: "pointer",
+            fontWeight: 700, lineHeight: 1,
+          }}
+          title="Ayuda (Ctrl+/ o ?)"
+          aria-label="Abrir ayuda"
+        >
+          ?
+        </button>
         <button
           onClick={onPalette}
           style={{
@@ -112,6 +127,7 @@ export default function App() {
   const [activeAgent, setActiveAgent] = useState(null);
   const [agentConf, setAgentConf]     = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen]       = useState(false);
   const [recentQueries, setRecentQueries] = useState([]);
   const [metrics, setMetrics]         = useState({});
   const [recentDecisions] = useState([]);
@@ -129,10 +145,14 @@ export default function App() {
     const handlePalette = () => setPaletteOpen(true);
     window.addEventListener("aletheia:palette", handlePalette);
 
+    const handleHelp = () => setHelpOpen(true);
+    window.addEventListener("aletheia:help", handleHelp);
+
     return () => {
       clearInterval(t);
       window.removeEventListener("aletheia:nav", handleNav);
       window.removeEventListener("aletheia:palette", handlePalette);
+      window.removeEventListener("aletheia:help", handleHelp);
     };
   }, []);
 
@@ -207,6 +227,7 @@ export default function App() {
       <Navbar
         status={status}
         onPalette={() => setPaletteOpen(true)}
+        onHelp={() => setHelpOpen(true)}
         panelOpen={panelOpen}
         onTogglePanel={() => setPanelOpen(o => !o)}
       />
@@ -217,7 +238,10 @@ export default function App() {
         {/* Sidebar */}
         <Sidebar
           activeView={activeView}
-          onNavigate={setActiveView}
+          onNavigate={(view) => {
+            if (view === "help") { setHelpOpen(true); return; }
+            setActiveView(view);
+          }}
           domain={domain}
           onDomain={setDomain}
           status={status}
@@ -351,6 +375,14 @@ export default function App() {
         onQuery={handlePaletteQuery}
         onAction={handlePaletteAction}
         recentQueries={recentQueries}
+      />
+
+      {/* Help Panel */}
+      <HelpPanel
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        onNavigate={(view) => { setActiveView(view); setHelpOpen(false); }}
+        onQuery={(q) => { handlePaletteQuery(q); setHelpOpen(false); }}
       />
     </div>
   );

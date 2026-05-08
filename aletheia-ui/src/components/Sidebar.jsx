@@ -17,6 +17,7 @@ const VIEWS = [
   { id: "docs",      icon: "📂", label: "Documentos" },
   { id: "dashboard", icon: "📊", label: "Dashboard" },
   { id: "settings",  icon: "⚙️",  label: "Config" },
+  { id: "help",      icon: "❓", label: "Ayuda" },
 ];
 
 const DOMAINS = [
