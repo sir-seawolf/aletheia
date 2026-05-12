@@ -1,4 +1,16 @@
-"""Prompts especializados por función para Aletheia."""
+"""
+Legacy prompts module - DEPRECATED.
+
+STATUS: PLACEHOLDER (legacy v1, migrate to core/llm/prompts.py)
+Dependencies: memory.models.UserProfile
+Last stable version: v1.0 (superseded)
+
+Contains profile-adaptive prompt builders for exploration/simulation.
+Each func injects: profile fields (verbosity_preference, structure_preference, abstraction_capacity), 
+target models (llama3/phi3), ~200-800 token length.
+
+TODO: IMPLEMENT migration to central LLMRouter prompt system.
+"""
 
 import json
 from typing import Dict, Any, Optional, List
@@ -38,26 +50,23 @@ def _build_profile_instructions(profile: Optional[UserProfile]) -> str:
 def exploration_prompt(context: Dict[str, Any]) -> str:
     """
     Prompt para el agente Explorer.
-    Extrae hechos relevantes de la memoria.
+    Extrae hechos concretos de la pregunta e inyecta contexto del perfil del usuario.
     """
-    profile = context.get("user_profile")
-    profile_instructions = _build_profile_instructions(profile)
+    profile_str = context.get("user_profile_str", "")
+    profile_section = f"\n\n{profile_str}" if profile_str else ""
 
-    return f"""Eres un analista frío y preciso. Tu trabajo es extraer hechos relevantes.
+    return f"""Eres un analista de decisiones personales. Analiza la siguiente pregunta y extrae los datos clave.
 
 Dominio: {context.get('domain', 'general')}
-Pregunta: {context.get('question', '')}
-Memoria disponible: {context.get('memory', [])}
+Pregunta: {context.get('question', '')}{profile_section}
 
-Instrucciones:
-1. Identifica los hechos más relevantes para la pregunta
-2. Señala qué información falta
-3. No interpretes, no opines, solo reporta
-{profile_instructions}
+Tu tarea:
+1. Extrae los hechos concretos que están en la pregunta o en los datos del usuario (números, cifras, situaciones específicas).
+2. Identifica qué información falta para poder responder con precisión.
+3. Estima tu confianza en los datos disponibles (0.0 a 1.0).
 
-Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
-{{"facts": ["hecho 1", "hecho 2"], "gaps": ["información faltante"], "confidence": 0.8}}
-"""
+Responde SOLO con este JSON (sin markdown, sin texto antes ni después):
+{{"facts": ["hecho 1", "hecho 2"], "gaps": ["dato faltante 1"], "confidence": 0.7}}"""
 
 
 def simulation_prompt(context: Dict[str, Any], exploration: Dict[str, Any], memory_bias: Dict[str, Any] = None) -> str:
@@ -98,13 +107,16 @@ Incorpora esta memoria regulada como sesgo estructural:
 """
 
 
-    return f"""Eres un simulador estratégico. Tu trabajo es generar escenarios futuros {memory_section if memory_section else ''}
+    profile_str = context.get("user_profile_str", "")
+    profile_section = f"\n{profile_str}" if profile_str else ""
+
+    return f"""Eres un simulador estratégico de decisiones personales. Tu trabajo es generar escenarios futuros realistas. {memory_section if memory_section else ''}
 
 Dominio: {context.get('domain', 'general')}
 Pregunta: {context.get('question', '')}
 Hechos conocidos: {exploration.get('facts', [])}
 Vacíos de información: {exploration.get('gaps', [])}
-Nivel de riesgo: {risk_level}
+Nivel de riesgo: {risk_level}{profile_section}
 
 Instrucciones:
 1. {scenario_instruction}
@@ -115,7 +127,7 @@ Instrucciones:
 {profile_instructions}
 
 Responde ÚNICAMENTE en formato JSON válido, sin markdown ni explicaciones adicionales:
-{{"scenarios": [{{"type": "conservative", "description": "...", "confidence": 0.6, "time_horizon": "9 meses"}}], "risks": ["riesgo 1"], "assumptions": ["supuesto 1"]}}
+{{"scenarios": [{{"type": "optimista", "description": "descripción del escenario", "probability": 0.60, "outcome": "positivo", "time_horizon": "9 meses"}}, {{"type": "conservador", "description": "descripción del escenario", "probability": 0.30, "outcome": "neutral", "time_horizon": "9 meses"}}], "risks": ["riesgo 1"], "assumptions": ["supuesto 1"]}}
 """
 
 

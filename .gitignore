@@ -143,3 +143,17 @@ cython_debug/
 *.sqlite3
 memory/data/
 
+# Personal data & runtime state (NEVER commit)
+PALACE/IDENTITY/
+PALACE/CREACION/
+aco_memory.json
+dump.txt
+dump_full.txt
+project_tree.txt
+.pip-installed
+
+# IDE / local tooling
+.cursor/
+.claude/settings.local.json
+.claude/cloude-code-toolbox-mcp-skills-awareness.md
+

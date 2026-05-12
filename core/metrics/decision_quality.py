@@ -3,14 +3,14 @@
 from typing import Dict, Any, List
 
 def compute_dqs(report: Dict[str, Any]) -> float:
-    \"\"\"
+    """
     DQS 0.0-1.0: Measures decision report quality.
     Components:
     - Scenarios diversity (0.3)
     - Confidence coherence (0.3)
     - Guardian quality (0.3)
     - Structure completeness (0.1)
-    \"\"\"
+    """
     scenarios: List[Dict] = report.get('scenarios', [])
     confidence: float = report.get('confidence', 0.5)
     guardian_block: bool = report.get('guardian_block', False)
@@ -19,9 +19,10 @@ def compute_dqs(report: Dict[str, Any]) -> float:
     risks = report.get('risks', {})
 
     # 1. Scenarios diversity (unique outcomes / total)
-    if scenarios:
-        outcomes = set(s.get('outcome', 'unknown') for s in scenarios)
-        diversity = len(outcomes) / len(scenarios)
+    valid_scenarios = [s for s in scenarios if isinstance(s, dict)]
+    if valid_scenarios:
+        outcomes = set(s.get('outcome', 'unknown') for s in valid_scenarios)
+        diversity = len(outcomes) / len(valid_scenarios)
     else:
         diversity = 0.0
 

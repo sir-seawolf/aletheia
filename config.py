@@ -1,7 +1,7 @@
 """Configuración central de Aletheia."""
 
 # Modelo de IA local
-MODEL = "llama3"
+MODEL = "llama3.2:3b"
 
 # Temperatura por defecto para generación
 TEMPERATURE = 0.7

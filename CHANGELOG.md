@@ -1,64 +1,25 @@
-# Changelog
-
-## v1.0.0 — FASE 1 Stabilized Kernel (2024)
+## v1.1.0 - Cognitive Execution Layer (2024)
 
 ### Added
-- FASE 1 stabilization: contract_lock.enforce_contract() - single source of truth
-- api_contract_gate: input validation only
-- api/main.py: clean pipeline input → process → enforce_contract
-- orchestrator.py: pure router explorer → simulator → guardian
-- guardian.py: 6 rules centralized, guardian_trace added
-- simulator.py: pure generation stub
-- memory/service.py: save_decision pure persist
-- Tests: test_every_output_passes_contract, updated full_pipeline
+- **CEL (core/cel/)**: executor.py fuses ACO + LLMRouter
+  - cognition.py: policy fusion
+  - routing.py: adaptive generate
+  - memory_bridge.py: unified memory/palace
+  - cost_model.py: cognitive cost
+  - learning_loop.py: auto-opt
+- orchestrator.py: ACO → CEL → explorer (augmented input)
 
-### Changed
-- All changes minimal, order: contract → api → orchestrator → agents → memory → tests
-- Zero roturas in core flow
+### Fixed
+- ACO files syntax (adaptive_router, learning_layer, middleware): unescaped quotes/arrows
 
-### Status
-- Contract enforced on all outputs
-- Guardian decisions traced
-- TODO.md 100% complete
+### Updated
+- launcher.bat v1.1: CEL demos [3] Status+Demo, [4] Quick Test
+- README.md: v1.1 FASE 2, CEL capa diagram
+- estado_actual.md: CEL operational
+- TODO.md: Complete
 
-## v0.2.0 — Cognitive Live MVP (previous)
+**Demo:** launcher.bat → 4
+**Full:** launcher.bat → 1/2 (DEMO/REAL CEL active)
 
+Ruta: Palace + Memory + CEL (ACO+Router) + Pipeline + Lock ✅
 
-### Added
-- Session-aware cognitive event streaming architecture.
-- React MVP UI in `aletheia-ui/` (single-screen cognitive console).
-- Minimal frontend flow:
-  - question input
-  - simulation trigger
-  - websocket live event panel
-  - final output panel
-
-### Changed
-- `core/event_bus.py`
-  - Migrated from a single global queue to per-session queues.
-  - `emit_event(...)` now routes by `session_id`.
-  - `get_event(session_id)` now reads events by session.
-- `core/context.py`
-  - Added `session_id` to context model.
-  - `to_dict()` now includes `session_id`.
-  - `from_request(..., session_id=...)` supported.
-- `core/orchestrator.py`
-  - Context creation now propagates `session_id`.
-  - Step loop now emits structured error event (`stage=blocked`, `event_type=error`) before re-raising.
-- `api/main.py`
-  - WebSocket endpoint moved to: `/stream/{session_id}`.
-  - Streaming loop now reads from `get_event(session_id)`.
-  - Added polling throttle (`asyncio.sleep(0.05)`) on every loop iteration.
-
-### Notes
-- Backend API remains available at `http://127.0.0.1:8000`.
-- Existing `/simulate`, `/health`, and `/` routes remain active.
-- CRA scaffold warns deprecation of Create React App, but build is working correctly for MVP.
-
-### Validation done
-- Backend:
-  - `/health` returns 200.
-  - `/simulate` happy path returns 200.
-  - `/simulate` validation errors return 422 for missing required fields.
-- Frontend:
-  - React production build succeeds (`npm run build` in `aletheia-ui`).

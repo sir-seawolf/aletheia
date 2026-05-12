@@ -1,4 +1,12 @@
-"""API de entrada para Aletheia usando FastAPI."""
+"""
+FastAPI entry point for Aletheia cognitive system.
+
+STATUS: IMPLEMENTED (production v1.1)
+Dependencies: fastapi, core.orchestrator, core.contracts.*, memory.service, core.metrics.*
+Last stable version: v1.1
+
+Main endpoint: POST /simulate for decision pipeline.
+"""
 
 import asyncio
 import uuid
@@ -27,7 +35,11 @@ app.add_middleware(
 )
 
 class SimulationRequest(BaseModel):
-    """Entrada mínima del sistema."""
+    """
+    Input model for decision simulation requests.
+
+    Responsibility: Validate minimal input for cognitive pipeline.
+    """ 
     domain: str
     question: str
     session_id: Optional[str] = None
@@ -35,7 +47,17 @@ class SimulationRequest(BaseModel):
 @app.post("/simulate")
 def simulate(request: SimulationRequest):
     """
-    Endpoint principal - Pipeline limpio: input → process → contract.
+    Main endpoint: Run full cognitive pipeline and enforce output contract.
+
+    Args:
+        request (SimulationRequest): Input domain, question, optional session_id
+
+    Returns:
+        dict: Validated DecisionReport with scenarios, risks, confidence
+
+    Raises:
+        ValidationError: Invalid input format
+        ContractViolation: Output fails schema enforcement
     """
     # 1. Validate input
     validated_input = APIContractGate.validate_request({
@@ -57,16 +79,50 @@ def simulate(request: SimulationRequest):
 
 @app.get("/system/metrics")
 def system_metrics():
+    """
+    Retrieve current system performance metrics.
+
+    Args:
+        None
+
+    Returns:
+        dict: System metrics data
+
+    Raises:
+        None
+    """
     return get_system_metrics()
 
 @app.get("/")
 def root():
-    """Información básica del sistema."""
+    """
+    Root endpoint with system info.
+
+    Args:
+        None
+
+    Returns:
+        dict: Basic system status
+
+    Raises:
+        None
+    """
     return {"system": "Aletheia", "status": "running", "mode": "local-first cognitive engine"}
 
 @app.get("/health")
 def health_check():
-    """Verificación de estado del sistema."""
+    """
+    Health check endpoint.
+
+    Args:
+        None
+
+    Returns:
+        dict: Health status
+
+    Raises:
+        None
+    """
     return {"status": "ok", "system": "aletheia"}
 
 @app.get("/sessions/{session_id}/events")

@@ -1,17 +1,12 @@
-# FASE 1 Stabilization TODO
+# Fix TypeError in CEL & System Tests (self_aware_civilization.py)
 
-## Progress Tracker
+**Status:** ✅ COMPLETED
 
-- [x] 1. Add enforce_contract() to `core/contracts/contract_lock.py`
-- [x] 2. Remove output validation from `core/contracts/api_contract_gate.py`
-- [x] 3. Update `api/main.py` to use enforce_contract()`
-- [x] 4. Simplify `core/orchestrator.py` to pure router (explorer → simulator → guardian)
-- [x] 5. Clean `agents/guardian.py` (no events, add guardian_trace)
-- [x] 6. Ensure `agents/simulator.py` pure generation
-- [x] 7. Add `save_decision(report)` to `memory/service.py` (pure persist)
-- [x] 8. Add `test_every_output_passes_contract()` to `tests/system/test_contract_integrity.py`
-- [x] 9. Update `tests/system/test_full_pipeline.py` for new flow
-- [x] 10. Run pytest + API test
+## Steps:
+- [✅] Step 1: Create this TODO.md ✅
+- [✅] Step 2: Edit core/civilization/self_aware_civilization.py - Update _civil_decision to handle ecosystem dict output ✅
+- [✅] Step 3: Test launcher option [3] (CEL & System Tests) - Verified via exact command, no TypeError ✅
+- [✅] Step 4: Verify no errors, update TODO.md to completed ✅
 
-**FASE 1 100% ✅ Ready for FASE 2**
+**Details:** TypeError 'string indices must be integers' at cognitive_ecosystem.py:85 from mc.select(proposals=dict instead of list).
 
