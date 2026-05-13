@@ -11,10 +11,12 @@ import DashboardKPIs    from './components/DashboardKPIs';
 import DqsChart         from './components/DqsChart';
 import DecisionList     from './components/DecisionList';
 import Sidebar          from './components/Sidebar';
-import CommandPalette   from './components/CommandPalette';
-import HelpPanel        from './components/HelpPanel';
+import CommandPalette      from './components/CommandPalette';
+import HelpPanel           from './components/HelpPanel';
+import CognitiveDashboard  from './components/CognitiveDashboard';
 
-const API_URL = "http://localhost:8000";
+// Dynamic API URL — start.py writes REACT_APP_API_URL to .env.local before npm start
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
 /* ── Navbar ─────────────────────────────────────────────────────────────── */
 
@@ -28,6 +30,25 @@ function StatusChip({ ok, label }) {
       fontSize: 11, color: ok ? "#4ade80" : "#6b7280",
     }}>
       <span style={{ fontSize: 8 }}>●</span> {label}
+    </span>
+  );
+}
+
+function FatigueChip({ fatigue }) {
+  if (fatigue == null) return null;
+  const pct   = Math.round(fatigue * 100);
+  const color = fatigue > 0.7 ? "#f87171" : fatigue > 0.4 ? "#fbbf24" : "#4ade80";
+  const bg    = fatigue > 0.7 ? "rgba(248,113,113,0.08)" : fatigue > 0.4 ? "rgba(251,191,36,0.08)" : "rgba(74,222,128,0.06)";
+  const label = fatigue > 0.7 ? "fatiga alta" : fatigue > 0.4 ? "fatiga" : "fresca";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "2px 8px", borderRadius: 20,
+      background: bg,
+      border: `1px solid ${color}44`,
+      fontSize: 11, color,
+    }}>
+      <span style={{ fontSize: 8 }}>◈</span> {pct}% {label}
     </span>
   );
 }
@@ -53,6 +74,7 @@ function Navbar({ status, onPalette, onHelp, panelOpen, onTogglePanel }) {
       {/* Status chips */}
       <div style={{ display: "flex", gap: 6, flex: 1, flexWrap: "nowrap", overflow: "hidden" }}>
         <StatusChip ok={status.ollama_ok} label={status.provider || "ollama"} />
+        <FatigueChip fatigue={status.fatigue ?? null} />
         {status.memory > 0 && (
           <span style={{ fontSize: 11, color: "#6b7280" }}>🧠 {status.memory}</span>
         )}
@@ -131,7 +153,7 @@ export default function App() {
   const [recentQueries, setRecentQueries] = useState([]);
   const [metrics, setMetrics]         = useState({});
   const [recentDecisions] = useState([]);
-  const [status, setStatus]           = useState({ provider: "ollama", ollama_ok: false, docs: 0, memory: 0, fin_total: 0 });
+  const [status, setStatus]           = useState({ provider: "ollama", ollama_ok: false, docs: 0, memory: 0, fin_total: 0, fatigue: null });
 
   // Boot
   useEffect(() => {
@@ -347,6 +369,15 @@ export default function App() {
             </div>
           )}
 
+          {/* COGNITIVE */}
+          {activeView === "cognitive" && (
+            <CognitiveDashboard
+              apiUrl={API_URL}
+              domain={domain}
+              sessionId={chatSessionId}
+            />
+          )}
+
           {/* SETTINGS */}
           {activeView === "settings" && (
             <SettingsPage
@@ -357,10 +388,14 @@ export default function App() {
           )}
         </main>
 
-        {/* Thinking Panel */}
+        {/* Thinking Panel
+            sessionId    — simulation WebSocket (changes per run)
+            cogSessionId — stable chat session (for cognitive state polling) */}
         <ThinkingPanel
           sessionId={sessionId}
+          cogSessionId={chatSessionId}
           apiUrl={API_URL}
+          domain={domain}
           open={panelOpen}
           onToggle={() => setPanelOpen(o => !o)}
           onAgentChange={(agent, conf) => { setActiveAgent(agent); setAgentConf(conf); }}

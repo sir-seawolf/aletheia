@@ -17,6 +17,7 @@ MAX_DURATION = 45           # safety cap in seconds
 
 _MODEL_DIR = Path(__file__).parent.parent.parent / "PALACE" / "voice_models" / "whisper"
 _model = None
+_vad_model = None
 
 
 def _get_model():
@@ -101,6 +102,40 @@ def transcribe_file(path: str, language: str = "es") -> str:
     return " ".join(seg.text for seg in segments).strip()
 
 
+def _get_vad_model():
+    """Load silero-vad once; return False if unavailable (fail-open)."""
+    global _vad_model
+    if _vad_model is not None:
+        return _vad_model
+    try:
+        from silero_vad import load_silero_vad
+        _vad_model = load_silero_vad()
+        print("  [voz] silero-VAD listo.")
+    except Exception:
+        _vad_model = False
+    return _vad_model
+
+
+def is_speech_present(audio: np.ndarray, min_speech_secs: float = 0.5) -> bool:
+    """Return True if silero-vad detects >= min_speech_secs of speech.
+
+    Falls back to True (pass-through) when silero-vad is not installed.
+    """
+    model = _get_vad_model()
+    if not model:
+        return True
+    try:
+        import torch
+        from silero_vad import get_speech_timestamps
+        tensor = torch.from_numpy(audio).float()
+        timestamps = get_speech_timestamps(tensor, model, sampling_rate=SAMPLE_RATE)
+        total_secs = sum(t["end"] - t["start"] for t in timestamps) / SAMPLE_RATE
+        return total_secs >= min_speech_secs
+    except Exception:
+        return True  # fail-open
+
+
 def preload():
     """Eagerly load the STT model so first response is fast."""
     _get_model()
+    _get_vad_model()

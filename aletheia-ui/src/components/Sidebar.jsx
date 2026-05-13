@@ -15,6 +15,7 @@ const VIEWS = [
   { id: "chat",      icon: "💬", label: "Chat" },
   { id: "simulate",  icon: "🧠", label: "Análisis" },
   { id: "docs",      icon: "📂", label: "Documentos" },
+  { id: "cognitive", icon: "◈",  label: "Cognitivo" },
   { id: "dashboard", icon: "📊", label: "Dashboard" },
   { id: "settings",  icon: "⚙️",  label: "Config" },
   { id: "help",      icon: "❓", label: "Ayuda" },

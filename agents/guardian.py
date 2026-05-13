@@ -74,7 +74,7 @@ def validate(simulation: Dict[str, Any], policy: Dict[str, Any] = None, drift_de
         known = set(DecisionReport.model_fields.keys()) if hasattr(DecisionReport, 'model_fields') else set(DecisionReport.__fields__.keys())
         filtered = {k: v for k, v in simulation.items() if k in known}
         report = DecisionReport(**filtered)
-        corrected_output = report.model_dump()
+        corrected_output = report.model_dump(mode='json')
         # Restore non-schema fields (exploration_confidence, llm_calls, user_profile_str, etc.)
         for k, v in simulation.items():
             if k not in corrected_output:

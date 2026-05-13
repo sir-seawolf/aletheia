@@ -25,8 +25,45 @@ const ROLE_STYLE = {
   },
 };
 
+const AGENT_CHIP = {
+  kronos: {
+    label: "KRONOS",
+    color: "#a78bfa",
+    bg:    "rgba(167,139,250,0.12)",
+    border:"1px solid rgba(167,139,250,0.3)",
+  },
+  aletheia: {
+    label: "Aletheia",
+    color: "#60a5fa",
+    bg:    "rgba(96,165,250,0.10)",
+    border:"1px solid rgba(96,165,250,0.25)",
+  },
+};
+
+function AgentChip({ agent }) {
+  const chip = AGENT_CHIP[agent] || AGENT_CHIP.aletheia;
+  return (
+    <span style={{
+      display: "inline-block",
+      fontSize: 9,
+      fontWeight: 700,
+      letterSpacing: "0.1em",
+      textTransform: "uppercase",
+      color: chip.color,
+      background: chip.bg,
+      border: chip.border,
+      borderRadius: 6,
+      padding: "1px 6px",
+      marginBottom: 5,
+    }}>
+      {chip.label}
+    </span>
+  );
+}
+
 function Bubble({ turn }) {
   const style = ROLE_STYLE[turn.role] || ROLE_STYLE.assistant;
+  const showChip = turn.role === "assistant" && turn.agent;
   return (
     <div style={{ display: "flex", justifyContent: style.align, marginBottom: 10 }}>
       <div style={{
@@ -40,7 +77,8 @@ function Bubble({ turn }) {
         lineHeight: 1.55,
         position: "relative",
       }}>
-        {turn.action && (
+        {showChip && <div><AgentChip agent={turn.agent} /></div>}
+        {turn.action && turn.action !== "kronos" && (
           <div style={{ fontSize: 10, color: "#818cf8", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>
             ⚡ {turn.action.replace("_", " ")}
           </div>
@@ -110,10 +148,11 @@ export default function ChatView({ apiUrl = "http://localhost:8000", sessionId, 
       const data = await res.json();
 
       setHistory(h => [...h, {
-        role: "assistant",
+        role:    "assistant",
         content: data.reply || "…",
-        ts: new Date().toISOString(),
-        action: data.action || null,
+        ts:      new Date().toISOString(),
+        action:  data.action || null,
+        agent:   data.agent || "aletheia",
       }]);
 
       // If the reply suggests a deep analysis, offer to escalate

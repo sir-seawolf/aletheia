@@ -73,7 +73,7 @@ def run(exploration: Dict[str, Any], policy: Optional[Dict[str, Any]] = None) ->
         memory_influence=None,
         similar_cases=[],
         prediction="proceed"
-    ).model_dump()
+    ).model_dump(mode='json')
 
     data["exploration_confidence"] = exploration.get("confidence", 0.5)
     data["llm_calls"] = llm_calls

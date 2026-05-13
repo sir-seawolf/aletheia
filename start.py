@@ -152,6 +152,16 @@ def step_ollama(demo: bool) -> str:
         return "DEV"
 
 
+def _write_env_local(api_port: int) -> None:
+    """Write REACT_APP_API_URL to aletheia-ui/.env.local so CRA picks it up."""
+    env_local = ROOT / "aletheia-ui" / ".env.local"
+    env_local.write_text(
+        f"REACT_APP_API_URL=http://127.0.0.1:{api_port}\n"
+        f"BROWSER=none\n"
+    )
+    _ok(f"UI apuntará a API en puerto {api_port}")
+
+
 def step_ui_deps():
     node_modules = ROOT / "aletheia-ui" / "node_modules"
     if node_modules.exists():
@@ -184,6 +194,7 @@ def start_web(mode: str):
         sys.exit(1)
 
     _save_ports(api_port, ui_port)
+    _write_env_local(api_port)
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -353,6 +364,59 @@ def show_status():
     except Exception:
         pass
 
+    # ── Cognitive layer (Aletheia 3.0) ──────────────────────────────────────
+    print()
+    print(_c("  Capa cognitiva 3.0", "bold"))
+    print()
+
+    try:
+        import sqlite3 as _sq
+        from memory.storage import MEMORY_DB_PATH
+        with _sq.connect(MEMORY_DB_PATH) as _c2:
+            n_traces = _c2.execute("SELECT COUNT(*) FROM cognitive_traces").fetchone()[0]
+            n_shadow = _c2.execute(
+                "SELECT COUNT(*) FROM cognitive_traces WHERE source='shadow_3.0'"
+            ).fetchone()[0]
+            n_degraded = _c2.execute(
+                "SELECT COUNT(*) FROM strategy_degradation WHERE penalty_score >= 0.7"
+            ).fetchone()[0]
+            n_div = _c2.execute("SELECT COUNT(*) FROM trace_divergences").fetchone()[0]
+            n_replay = _c2.execute("SELECT COUNT(*) FROM cognitive_replays").fetchone()[0]
+        _ok(f"Trazas totales:     {n_traces}  (shadow: {n_shadow})")
+        _ok(f"Divergencias:       {n_div}")
+        _ok(f"Replays:            {n_replay}")
+        if n_degraded > 0:
+            _warn(f"Modos degradados:   {n_degraded}")
+        else:
+            _ok("Modos degradados:   0")
+    except Exception as e:
+        _warn(f"Tablas cognitivas no inicializadas ({e})")
+        _info("Ejecuta el servidor una vez para crear las tablas automáticamente")
+
+    try:
+        from core.cognition.trace_learner import trace_learner
+        modes, providers = trace_learner.compute_insights(force=True)
+        qualified = sum(1 for m in modes if m.qualifies())
+        _ok(f"Modos con insights: {len(modes)} ({qualified} calificados, mín. 5 muestras)")
+        if providers:
+            top = max(providers, key=lambda p: p.efficiency_score)
+            _ok(f"Provider top:       {top.provider} (eff={top.efficiency_score:.2f})")
+    except Exception:
+        _info("TraceLearner sin datos aún (normal en primer arranque)")
+
+    shadow_on = Path(ROOT / "PALACE" / "config" / "preferences.json").exists()
+    try:
+        import json as _json
+        prefs = _json.loads((ROOT / "PALACE" / "config" / "preferences.json").read_text())
+        shadow_on = prefs.get("shadow_mode", False)
+    except Exception:
+        shadow_on = False
+
+    if shadow_on:
+        _ok("Shadow mode:        ACTIVO (Aletheia 3.0 en paralelo)")
+    else:
+        _info("Shadow mode:        inactivo — actívalo con shadow_mode:true en preferences.json")
+
     print()
 
 
@@ -373,7 +437,7 @@ def main():
 
     print()
     print(_c("  ╔══════════════════════════════╗", "bold"))
-    print(_c("  ║       ALETHEIA  v2.0         ║", "bold"))
+    print(_c("  ║       ALETHEIA  v3.0         ║", "bold"))
     print(_c("  ╚══════════════════════════════╝", "bold"))
     print()
 

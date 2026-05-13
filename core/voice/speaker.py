@@ -21,17 +21,19 @@ Sprint 3 — emotional modulation:
 import re
 import time
 import os
+import threading
 from pathlib import Path
 
 import numpy as np
 
 _backend: str | None = None
 _engine = None
+_stop_event = threading.Event()
 
 _PIPER_DIR   = Path(__file__).parent.parent.parent / "PALACE" / "voice_models" / "piper"
-_PIPER_MODEL = "es_ES-davefx-medium"
+_PIPER_MODEL = "es_ES-sharvard-medium"
 _PIPER_HF_REPO   = "rhasspy/piper-voices"
-_PIPER_HF_PREFIX = "es/es_ES/davefx/medium"
+_PIPER_HF_PREFIX = "es/es_ES/sharvard/medium"
 _PIPER_ONNX  = _PIPER_DIR / _PIPER_HF_PREFIX / f"{_PIPER_MODEL}.onnx"
 _PIPER_JSON  = _PIPER_DIR / _PIPER_HF_PREFIX / f"{_PIPER_MODEL}.onnx.json"
 
@@ -100,7 +102,7 @@ def _try_piper() -> bool:
         from piper.voice import PiperVoice
         onnx, cfg = _PIPER_ONNX, _PIPER_JSON
         if not onnx.exists():
-            print(f"  [voz] Descargando Piper {_PIPER_MODEL} (~65 MB, solo una vez)...")
+            print(f"  [voz] Descargando Piper {_PIPER_MODEL} (~65 MB, solo la primera vez)...")
             onnx, cfg = _download_piper()
         _engine = PiperVoice.load(str(onnx), config_path=str(cfg))
         _backend = "piper"
@@ -148,14 +150,26 @@ def _init() -> None:
 
 # ── public API ─────────────────────────────────────────────────────────────
 
+def stop() -> None:
+    """Interrupt any ongoing TTS playback immediately."""
+    _stop_event.set()
+    try:
+        import sounddevice as sd
+        sd.stop()
+    except Exception:
+        pass
+
+
 def speak(text: str, emotion: str | None = None) -> None:
     """
     Synthesise and play text with optional emotional modulation.
 
     Sprint 2: streams sentence by sentence with natural pauses.
     Sprint 3: modulates Piper voice params from emotion label.
+    Interruptible: call stop() from any thread to cut playback mid-sentence.
     Falls back gracefully to pyttsx3 or print if Piper unavailable.
     """
+    _stop_event.clear()
     _init()
 
     if _backend == "piper":
@@ -172,20 +186,22 @@ def speak(text: str, emotion: str | None = None) -> None:
         )
 
         for i, sentence in enumerate(sents):
+            if _stop_event.is_set():
+                break
             if not sentence:
                 continue
 
-            chunks = [
-                chunk.audio_float_array
-                for chunk in _engine.synthesize_wav(sentence, syn_config=syn_config)
-            ]
+            chunks = list(_engine.synthesize(sentence, syn_config=syn_config))
 
             if not chunks:
                 continue
 
-            audio = np.concatenate(chunks)
+            audio = np.concatenate([c.audio_int16_array for c in chunks]).astype(np.float32) / 32768.0
             sd.play(audio, samplerate=sr)
             sd.wait()
+
+            if _stop_event.is_set():
+                break
 
             # Natural pause between sentences (not after the last one)
             if i < len(sents) - 1:

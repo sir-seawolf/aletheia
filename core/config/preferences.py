@@ -30,9 +30,10 @@ _DEFAULTS: dict[str, Any] = {
         "provider": "ollama",
         "model": "",
         "api_key": "",
-        # Failover chain: tried in order when primary fails.
-        # Each entry: {"provider": "...", "api_key": "..."}  (api_key optional if env var set)
         "failover_chain": [],
+        # Per-agent provider overrides. Keys: agent id. Value: provider name.
+        # Example: {"kronos": "claude", "conversacional": "ollama"}
+        "agents": {},
     },
     "voice": {
         "default_input": "text",
@@ -94,6 +95,16 @@ def get_api_key(provider: str) -> str:
 def get_failover_chain() -> list[dict]:
     """Return the ordered list of fallback providers."""
     return load().get("llm", {}).get("failover_chain", [])
+
+
+def get_provider_for_agent(agent_id: str) -> str:
+    """
+    Return the configured provider for *agent_id*.
+    Falls back to the global provider if no per-agent override is set.
+    """
+    prefs = load()
+    agents = prefs.get("llm", {}).get("agents", {})
+    return agents.get(agent_id) or prefs.get("llm", {}).get("provider", "ollama")
 
 
 # ── helpers ────────────────────────────────────────────────────────────────

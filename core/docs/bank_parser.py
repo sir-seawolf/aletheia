@@ -28,11 +28,11 @@ _CATEGORIES: list[tuple[str, list[str]]] = [
     ("nomina",        ["nomina", "nómina", "salary", "sueldo", "haberes"]),
     ("supermercado",  ["mercadona", "lidl", "carrefour", "alcampo", "dia ", "eroski", "aldi", "supermercado"]),
     ("restaurante",   ["restaurante", "cafeteria", "bar ", "mcdonalds", "burger", "pizz", "sushi", "kebab"]),
-    ("transporte",    ["renfe", "metro", "bus ", "cabify", "uber", "repsol", "cepsa", "bp ", "gasolina", "parking", "peaje"]),
+    ("transporte",    ["renfe", "metro", "bus ", "cabify", "uber", "repsol", "cepsa", "bp ", "gasolina", "gasolinera", "parking", "peaje", "autopista"]),
     ("suscripcion",   ["netflix", "spotify", "amazon prime", "youtube", "hbo", "disney", "apple", "google one", "microsoft"]),
     ("salud",         ["farmacia", "medico", "médico", "hospital", "clinica", "clínica", "dentista", "seguro salud"]),
     ("ocio",          ["cine", "teatro", "concierto", "amazon", "zara", "mango", "h&m", "fnac", "corte ingles"]),
-    ("recibo",        ["luz", "agua", "gas ", "telefono", "teléfono", "internet", "comunidad", "hipoteca", "alquiler"]),
+    ("recibo",        ["luz", "agua", "gas ", "telefono", "teléfono", "internet", "comunidad", "hipoteca", "alquiler", "adeudo", "recibo"]),
     ("seguro",        ["seguro", "mapfre", "axa", "allianz", "mutua", "adeslas"]),
     ("impuesto",      ["hacienda", "agencia tributaria", "ayuntamiento", "impuesto", "ivtm", "ibi "]),
     ("transferencia", ["transferencia", "bizum", "paypal", "bizum"]),
@@ -184,11 +184,15 @@ def _parse_xlsx(path: Path) -> list[dict]:
     if not rows:
         return []
 
-    # Find header row
+    # Find header row — require ≥3 non-empty cells to skip report metadata lines
+    # (e.g. BBVA has "Fecha de generación del informe: ..." in a single merged cell)
     header_idx = 0
-    for i, row in enumerate(rows[:10]):
-        row_str = " ".join(str(c).lower() for c in row if c)
-        if any(kw in row_str for kw in ["fecha", "date", "concepto", "importe"]):
+    for i, row in enumerate(rows[:15]):
+        non_empty = [c for c in row if c is not None and str(c).strip()]
+        if len(non_empty) < 3:
+            continue
+        row_str = " ".join(str(c).lower() for c in non_empty)
+        if any(kw in row_str for kw in ["fecha", "date", "concepto", "importe", "f.valor"]):
             header_idx = i
             break
 
@@ -233,6 +237,98 @@ def _parse_xlsx(path: Path) -> list[dict]:
             "balance":  _parse_amount(raw_balance) if raw_balance else None,
             "category": _categorise(raw_concept),
         })
+    return transactions
+
+
+_BBVA_MONTHS = {
+    "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
+    "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
+    "septiembre": "09", "octubre": "10", "noviembre": "11", "diciembre": "12",
+}
+_BBVA_HEADER_RE = re.compile(
+    r"EXTRACTO\s*(?:DE\s*)?([A-ZÁÉÍÓÚÜ]+)\s*(\d{4})", re.IGNORECASE
+)
+# Matches: DD/MM  DD/MM  [concept]  [amount]  [balance]
+_BBVA_TXN_RE = re.compile(
+    r"^(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+"
+    r"(-?\d{1,3}(?:\.\d{3})*,\d{2})\s+"
+    r"(-?\d{1,3}(?:\.\d{3})*,\d{2})\s*$"
+)
+
+
+def _parse_bbva_pdf(path: Path) -> list[dict]:
+    """Parse BBVA monthly PDF statement (text-based, no OCR needed)."""
+    try:
+        import pdfplumber
+    except ImportError:
+        raise RuntimeError("pip install pdfplumber")
+
+    year: str | None = None
+    stmt_month: int = 0
+    transactions: list[dict] = []
+
+    _PAGE_HEADERS = {"EXTRACTO", "IBAN", "TITULAR", "F.OPER", "F.VALOR", "CONCEPTO"}
+
+    with pdfplumber.open(str(path)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+
+            if year is None:
+                m = _BBVA_HEADER_RE.search(text)
+                if m:
+                    month_name = m.group(1).lower()
+                    year = m.group(2)
+                    stmt_month = int(_BBVA_MONTHS.get(month_name, "1"))
+
+            lines = text.splitlines()
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                m = _BBVA_TXN_RE.match(line)
+                if not m:
+                    i += 1
+                    continue
+
+                f_valor    = m.group(2)
+                concept    = m.group(3).strip()
+                amount_str = m.group(4)
+
+                if "SALDO" in concept.upper():
+                    i += 1
+                    continue
+
+                # Lookahead: next line may be observation (card nr + merchant name)
+                observation = ""
+                if i + 1 < len(lines):
+                    nxt = lines[i + 1].strip()
+                    is_header = any(kw in nxt.upper() for kw in _PAGE_HEADERS)
+                    is_txn    = bool(re.match(r"^\d{2}/\d{2}\b", nxt))
+                    if nxt and not is_txn and not is_header:
+                        observation = nxt
+                        i += 1
+
+                if year:
+                    v_month = int(f_valor[3:5])
+                    v_year  = str(int(year) - 1) if v_month > stmt_month else year
+                    date_str = f"{v_year}-{f_valor[3:5]}-{f_valor[:2]}"
+                else:
+                    date_str = f_valor
+
+                amount = _parse_amount(amount_str)
+                if amount == 0.0:
+                    i += 1
+                    continue
+
+                transactions.append({
+                    "date":        date_str,
+                    "concept":     concept,
+                    "observation": observation,
+                    "amount":      amount,
+                    "balance":     None,
+                    "category":    _categorise(concept),
+                })
+                i += 1
+
     return transactions
 
 
@@ -287,7 +383,10 @@ def parse(path: str | Path) -> dict[str, Any]:
     try:
         if suffix in (".xlsx", ".xls"):
             txns = _parse_xlsx(p)
-            bank = "generic"
+            bank = "bbva" if "bbva" in p.name.lower() else "generic"
+        elif suffix == ".pdf":
+            txns = _parse_bbva_pdf(p)
+            bank = "bbva"
         elif suffix in (".ofx", ".qfx"):
             text = p.read_text(encoding="latin-1", errors="replace")
             txns = _parse_ofx(text)

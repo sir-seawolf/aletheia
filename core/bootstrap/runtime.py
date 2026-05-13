@@ -534,13 +534,34 @@ async def simulate_endpoint(request: Dict):
     # Layer 3 — full decision pipeline (non-blocking: keeps event loop free for WS)
     import asyncio, functools
     session_id = request.get("session_id") or "local"
+
+    # Open a cognitive trace for this simulation request
+    from core.tracing.context import begin_trace, set_trace
+    from core.tracing.store import trace_store as _ts
+    from core.tracing.trace import TraceBuilder
+    _sim_tb = TraceBuilder(session_id=session_id, domain=domain, question=question, source="v1_pipeline")
+    set_trace(_sim_tb)
+
+    def _commit_sim_trace(output: dict) -> None:
+        try:
+            confidence = float(output.get("confidence", 0.7))
+            trace = _sim_tb.finish(output=str(output.get("llm_insight", ""))[:120], confidence=confidence)
+            _ts.save(trace)
+            set_trace(None)
+            from core.tracing.shadow import schedule_shadow
+            schedule_shadow(session_id, domain, question, trace.output_preview)
+        except Exception:
+            pass
+
     from core.orchestrator import process_request
     from core.contracts.contract_lock import validate_final_report
     result = await asyncio.get_event_loop().run_in_executor(
         None,
         functools.partial(process_request, domain, question, session_id=session_id),
     )
-    return validate_final_report(result)
+    validated = validate_final_report(result)
+    _commit_sim_trace(validated)
+    return validated
 
 @app.get("/system/metrics")
 async def system_metrics():
@@ -887,6 +908,84 @@ async def delete_gmail_credentials():
     return {"ok": True, "removed": removed}
 
 
+# ── KRONOS endpoints ───────────────────────────────────────────────────────
+
+@app.get("/api/kronos/context")
+async def kronos_context(mode: str = "brief"):
+    """Return the financial context block KRONOS would inject into its prompt."""
+    from core.kronos.financial_cache import summary_text
+    ctx = summary_text(mode=mode)
+    return {"ok": True, "context": ctx, "empty": not ctx}
+
+
+@app.post("/api/kronos/rebuild")
+async def kronos_rebuild():
+    """Force a full rebuild of the financial cache from all artifacts."""
+    import asyncio, functools
+    try:
+        from core.kronos.financial_cache import rebuild
+        cache = await asyncio.get_event_loop().run_in_executor(None, rebuild)
+        s = cache["summary"]
+        return {
+            "ok": True,
+            "count": s["count"],
+            "net": s["net"],
+            "categories": list(s["by_category"].keys()),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.get("/api/kronos/summary")
+async def kronos_summary():
+    """Return the cached financial summary (no LLM call)."""
+    from core.kronos.financial_cache import rebuild_if_stale
+    cache = rebuild_if_stale()
+    return {"ok": True, "summary": cache.get("summary", {}), "built_at": cache.get("built_at")}
+
+
+@app.post("/api/kronos/analyze")
+async def kronos_analyze(body: Dict):
+    """Full KRONOS analysis report. Body: { question: str }"""
+    question = (body.get("question") or "").strip()
+    if not question:
+        return {"ok": False, "error": "question requerido"}
+    try:
+        import asyncio, functools
+        from core.kronos.analyzer import full_analysis
+        report = await asyncio.get_event_loop().run_in_executor(
+            None, functools.partial(full_analysis, question)
+        )
+        return {"ok": True, "report": report}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/api/settings/llm/agents")
+async def set_agent_llm(body: Dict):
+    """
+    Configure per-agent LLM provider.
+    Body: { "agent_id": "kronos", "provider": "claude" }
+    """
+    agent_id = (body.get("agent_id") or "").strip()
+    provider = (body.get("provider") or "").strip()
+    if not agent_id or not provider:
+        return {"ok": False, "error": "agent_id y provider requeridos"}
+    from core.config.preferences import load, save
+    prefs = load()
+    prefs.setdefault("llm", {}).setdefault("agents", {})[agent_id] = provider
+    save(prefs)
+    return {"ok": True, "agent_id": agent_id, "provider": provider}
+
+
+@app.get("/api/settings/llm/agents")
+async def get_agent_llm():
+    """Return current per-agent LLM overrides."""
+    from core.config.preferences import load
+    agents = load().get("llm", {}).get("agents", {})
+    return {"ok": True, "agents": agents}
+
+
 # ── Settings ───────────────────────────────────────────────────────────────
 
 @app.get("/api/settings")
@@ -1018,12 +1117,60 @@ async def system_status():
     except Exception:
         pass
 
+    # ── Cognitive layer metrics ───────────────────────────────────────────────
+    fatigue         = None
+    traces_today    = 0
+    shadow_enabled  = False
+    qualified_modes = 0
+    degraded_modes  = 0
+
+    try:
+        from core.session_state import _global_state
+        fatigue = round(_global_state.fatigue, 3)
+    except Exception:
+        pass
+
+    try:
+        import sqlite3 as _sq
+        from memory.storage import MEMORY_DB_PATH
+        from datetime import date
+        today = date.today().isoformat()
+        with _sq.connect(MEMORY_DB_PATH, timeout=2) as _conn:
+            traces_today = _conn.execute(
+                "SELECT COUNT(*) FROM cognitive_traces WHERE timestamp LIKE ?",
+                (f"{today}%",),
+            ).fetchone()[0]
+            degraded_modes = _conn.execute(
+                "SELECT COUNT(*) FROM strategy_degradation WHERE penalty_score >= 0.7"
+            ).fetchone()[0]
+    except Exception:
+        pass
+
+    try:
+        from core.tracing.shadow import is_shadow_enabled
+        shadow_enabled = is_shadow_enabled()
+    except Exception:
+        pass
+
+    try:
+        from core.cognition.trace_learner import trace_learner
+        modes, _ = trace_learner.compute_insights()
+        qualified_modes = sum(1 for m in modes if m.qualifies())
+    except Exception:
+        pass
+
     return {
-        "provider":   provider,
-        "ollama_ok":  ollama_ok,
-        "docs":       total_docs,
-        "memory":     mem_count,
-        "fin_total":  round(fin_total, 2),
+        "provider":        provider,
+        "ollama_ok":       ollama_ok,
+        "docs":            total_docs,
+        "memory":          mem_count,
+        "fin_total":       round(fin_total, 2),
+        # Cognitive 3.0 fields
+        "fatigue":         fatigue,
+        "traces_today":    traces_today,
+        "shadow_enabled":  shadow_enabled,
+        "qualified_modes": qualified_modes,
+        "degraded_modes":  degraded_modes,
     }
 
 
@@ -1055,6 +1202,29 @@ async def chat_endpoint(body: Dict):
     if not message:
         return {"error": "Campo 'message' vacío."}
 
+    # Traceability setup — best-effort, never blocks the response
+    try:
+        from core.tracing.trace import TraceBuilder
+        from core.tracing.context import set_trace
+        from core.tracing.store import trace_store as _trace_store
+        _tb = TraceBuilder(session_id=session_id, domain=domain, question=message, source="v1_pipeline")
+        set_trace(_tb)
+    except Exception:
+        _tb = None
+        _trace_store = None
+
+    def _commit_trace(reply: str, confidence: float = 0.7, agent: str = "aletheia") -> None:
+        try:
+            if _tb and _trace_store:
+                from core.tracing.context import set_trace
+                trace = _tb.finish(output=reply, confidence=confidence)
+                _trace_store.save(trace)
+                set_trace(None)
+                from core.tracing.shadow import schedule_shadow
+                schedule_shadow(session_id, domain, message, reply)
+        except Exception:
+            pass
+
     from core.chat.session import get_or_create
     session = get_or_create(session_id, domain)
     session.add("user", message)
@@ -1065,6 +1235,7 @@ async def chat_endpoint(body: Dict):
         action_result = _execute_action_api(action, message, domain)
         reply = action_result.get("llm_insight", "Acción ejecutada.")
         session.add("assistant", reply, action=action)
+        _commit_trace(reply, confidence=0.85, agent="executive")
         return {
             "reply":        reply,
             "session_id":   session_id,
@@ -1073,7 +1244,29 @@ async def chat_endpoint(body: Dict):
             "history_len":  len(session.history),
         }
 
-    # 2. RAG context — semantic search over indexed documents
+    # 2. KRONOS routing — financial/vital analysis questions
+    from core.kronos.detector import is_kronos_query
+    if is_kronos_query(message):
+        from core.kronos.analyzer import quick_analysis as kronos_quick
+        try:
+            import asyncio, functools
+            reply = await asyncio.get_event_loop().run_in_executor(
+                None, functools.partial(kronos_quick, message)
+            ) or "Necesito más contexto para analizar esto."
+        except Exception:
+            reply = "KRONOS no pudo conectar con el modelo ahora mismo."
+        session.add("assistant", reply, action="kronos")
+        _commit_trace(reply, confidence=0.8, agent="kronos")
+        return {
+            "reply":       reply,
+            "session_id":  session_id,
+            "action":      None,
+            "action_data": None,
+            "agent":       "kronos",
+            "history_len": len(session.history),
+        }
+
+    # 3. RAG context — semantic search over indexed documents
     rag_context = ""
     try:
         from core.docs.rag import search as _rag_search
@@ -1088,7 +1281,7 @@ async def chat_endpoint(body: Dict):
     except Exception:
         pass
 
-    # 3. Build context-aware prompt
+    # 4. Build context-aware prompt
     history_ctx = session.context_prompt()
     from core.llm import router as llm_router
 
@@ -1122,11 +1315,13 @@ async def chat_endpoint(body: Dict):
         reply = "No pude conectar con el modelo de lenguaje ahora mismo."
 
     session.add("assistant", reply)
+    _commit_trace(reply, confidence=0.7, agent="aletheia")
     return {
         "reply":       reply,
         "session_id":  session_id,
         "action":      None,
         "action_data": None,
+        "agent":       "aletheia",
         "history_len": len(session.history),
     }
 
@@ -1145,6 +1340,362 @@ async def clear_chat(session_id: str):
     from core.chat.session import clear
     clear(session_id)
     return {"ok": True}
+
+
+# ── Cognitive Traceability Layer ────────────────────────────────────────────
+
+@app.get("/api/traces")
+async def get_traces(
+    limit: int = Query(default=50, le=200),
+    session_id: Optional[str] = Query(default=None),
+    source: Optional[str] = Query(default=None),
+    mode: Optional[str] = Query(default=None),
+):
+    """
+    Recent cognitive traces.
+
+    Query params (all optional):
+      limit      — max results (default 50, max 200)
+      session_id — filter by session
+      source     — "v1_pipeline" | "shadow_3.0" | "voice"
+      mode       — e.g. "KRONOS", "ANALYTICAL", "OBSERVER"
+    """
+    from core.tracing.store import trace_store
+    return {
+        "traces": trace_store.recent(
+            limit=limit,
+            session_id=session_id,
+            source=source,
+            mode=mode,
+        )
+    }
+
+
+@app.get("/api/traces/summary")
+async def traces_summary(session_id: Optional[str] = Query(default=None)):
+    """Aggregate stats: mode counts, avg latency, avg fatigue, top providers."""
+    from core.tracing.store import trace_store
+    return trace_store.summary(session_id=session_id)
+
+
+@app.get("/api/traces/divergences")
+async def traces_divergences(limit: int = Query(default=20, le=100)):
+    """Raw shadow vs v1 output divergences (output_preview diff only)."""
+    from core.tracing.store import trace_store
+    return {"divergences": trace_store.divergences(limit=limit)}
+
+
+@app.get("/api/traces/divergences/analyzed")
+async def traces_divergences_analyzed(
+    limit: int  = Query(default=50, le=200),
+    winner: Optional[str] = Query(default=None),   # "shadow_3.0" | "v1_pipeline" | "tie"
+    mode:   Optional[str] = Query(default=None),
+):
+    """
+    Multidimensional divergence reports (DivergenceAnalyzer).
+
+    Each report scores 6 dimensions and determines overall_winner:
+      reasoning_depth, cost_efficiency, coherence,
+      context_alignment, fatigue_impact, memory_retrieval
+
+    Triggers a fresh analysis pass if no reports exist yet.
+    """
+    from core.tracing.store import trace_store
+    return {
+        "reports": trace_store.analyzed_divergences(limit=limit, winner=winner, mode=mode)
+    }
+
+
+@app.get("/api/traces/divergences/stats")
+async def traces_divergences_stats():
+    """Aggregate win rates, avg scores per dimension, top winning modes."""
+    from core.tracing.store import trace_store
+    return trace_store.divergence_stats()
+
+
+@app.post("/api/traces/analyze")
+async def run_divergence_analysis(limit: int = Query(default=50, le=200)):
+    """
+    Trigger a fresh divergence analysis pass over the N most recent trace pairs.
+    Returns the number of reports generated.
+    """
+    import asyncio, functools
+    from core.tracing.divergence import divergence_analyzer
+    reports = await asyncio.get_event_loop().run_in_executor(
+        None, functools.partial(divergence_analyzer.analyze, limit=limit)
+    )
+    return {"analyzed": len(reports), "reports": [r.to_dict() for r in reports[:10]]}
+
+
+@app.get("/api/traces/{trace_id}")
+async def get_trace(trace_id: str):
+    """Full detail for a single trace."""
+    from core.tracing.store import trace_store
+    trace = trace_store.get(trace_id)
+    if not trace:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Trace not found")
+    return trace
+
+
+# ── Cognitive Replay ─────────────────────────────────────────────────────────
+
+@app.post("/api/traces/{trace_id}/replay")
+async def replay_trace(trace_id: str, body: Dict):
+    """
+    Re-run a historical trace with different parameters.
+
+    Body (all optional):
+      target_mode      — ModeID or blend preset name ("KRONOS", "strategic_analytical", ...)
+      target_provider  — "ollama" | "claude" | "openai" | ...
+      state_override   — {"fatigue": 0.8, "energy": 0.5, ...}
+      synthesis        — "weighted_prompt" | "sequential"  (for blends)
+      compare_with_original — bool (default true)
+      label            — human description of the scenario
+
+    Returns: ReplayResult with new trace, improvement verdict, and divergence score.
+    """
+    import asyncio, functools
+    from core.tracing.replay import cognitive_replayer, ReplayConfig
+
+    config = ReplayConfig(
+        target_mode           = body.get("target_mode"),
+        target_provider       = body.get("target_provider"),
+        state_override        = body.get("state_override"),
+        synthesis             = body.get("synthesis", "weighted_prompt"),
+        compare_with_original = body.get("compare_with_original", True),
+        label                 = body.get("label", ""),
+    )
+
+    result = await asyncio.get_event_loop().run_in_executor(
+        None,
+        functools.partial(cognitive_replayer.replay, trace_id, config),
+    )
+    return result.to_dict()
+
+
+@app.post("/api/traces/{trace_id}/replay/batch")
+async def batch_replay_trace(trace_id: str, body: Dict):
+    """
+    Run multiple replay scenarios against the same trace and compare them.
+
+    Body:
+      configs — list of ReplayConfig dicts (same fields as single replay)
+
+    Returns: ranked list of ReplayResults (best improvement first).
+    Useful for answering "which mode/provider would have worked best?"
+    """
+    import asyncio, functools
+    from core.tracing.replay import cognitive_replayer, ReplayConfig
+    from fastapi import HTTPException
+
+    raw_configs = body.get("configs", [])
+    if not raw_configs:
+        raise HTTPException(status_code=400, detail="Field 'configs' is required and must be non-empty.")
+
+    configs = [
+        ReplayConfig(
+            target_mode           = c.get("target_mode"),
+            target_provider       = c.get("target_provider"),
+            state_override        = c.get("state_override"),
+            synthesis             = c.get("synthesis", "weighted_prompt"),
+            compare_with_original = c.get("compare_with_original", True),
+            label                 = c.get("label", ""),
+        )
+        for c in raw_configs
+    ]
+
+    results = await asyncio.get_event_loop().run_in_executor(
+        None,
+        functools.partial(cognitive_replayer.batch_replay, trace_id, configs),
+    )
+    return {
+        "original_trace_id": trace_id,
+        "total_replays":     len(results),
+        "results":           [r.to_dict() for r in results],
+    }
+
+
+@app.get("/api/traces/{trace_id}/replays")
+async def get_trace_replays(trace_id: str, limit: int = Query(default=20, le=100)):
+    """All replay history for a specific original trace."""
+    from core.tracing.replay import replay_store
+    return {
+        "original_trace_id": trace_id,
+        "replays": replay_store.history(limit=limit, original_trace_id=trace_id),
+    }
+
+
+@app.get("/api/replay/history")
+async def replay_history(
+    limit:      int = Query(default=50, le=200),
+    improvement: Optional[str] = Query(default=None),  # "better"|"worse"|"tie"
+):
+    """Recent replay results across all traces, optionally filtered by outcome."""
+    from core.tracing.replay import replay_store
+    return {
+        "replays": replay_store.history(limit=limit, improvement=improvement)
+    }
+
+
+@app.get("/api/replay/stats")
+async def replay_stats():
+    """Aggregate replay outcomes: how often replays improve on the original."""
+    from core.tracing.replay import replay_store
+    return replay_store.stats()
+
+
+# ── Adaptive Learning Loop ─────────────────────────────────────────────────
+
+@app.get("/api/learning/insights")
+async def learning_insights(domain: Optional[str] = Query(default=None)):
+    """
+    Current ranked insights per (domain, mode/blend) and per provider.
+    Includes rank_score, degradation flag, and shadow win_rate.
+    Forces a cache refresh if data is stale (> 5 min).
+    """
+    from core.cognition.trace_learner import trace_learner
+    if domain:
+        modes = trace_learner.insights_for(domain)
+        return {
+            "domain":    domain,
+            "modes":     [i.to_dict() for i in modes],
+        }
+    return trace_learner.all_insights()
+
+
+@app.get("/api/learning/degradation")
+async def learning_degradation():
+    """
+    All degraded strategies and full penalty table.
+    Use this to understand what the system has learned to avoid.
+    """
+    from core.cognition.degradation import strategy_degradation
+    return {
+        "degraded": strategy_degradation.all_degraded(),
+        "all":      strategy_degradation.all_entries(),
+    }
+
+
+@app.post("/api/learning/recompute")
+async def learning_recompute():
+    """
+    Force a full recomputation of TraceLearner insights (bypasses 5-min TTL).
+    Returns summary of modes and providers analyzed.
+    """
+    import asyncio, functools
+    from core.cognition.trace_learner import trace_learner
+    modes, providers = await asyncio.get_event_loop().run_in_executor(
+        None,
+        functools.partial(trace_learner.compute_insights, force=True),
+    )
+    return {
+        "modes_analyzed":     len(modes),
+        "providers_analyzed": len(providers),
+        "qualified_modes":    sum(1 for m in modes if m.qualifies()),
+        "degraded_modes":     sum(1 for m in modes if m.degraded),
+        "top_modes":          [m.to_dict() for m in sorted(modes, key=lambda x: -x.rank_score)[:5]],
+        "top_providers":      [p.to_dict() for p in sorted(providers, key=lambda x: -x.efficiency_score)[:3]],
+    }
+
+
+@app.post("/api/learning/degradation/reset")
+async def learning_degradation_reset(body: Dict):
+    """
+    Reset degradation penalties.
+    Body: {"domain": "...", "mode_or_blend": "..."}  — both optional (omit to reset all).
+    """
+    from core.cognition.degradation import strategy_degradation
+    n = strategy_degradation.reset(
+        domain=body.get("domain"),
+        mode_or_blend=body.get("mode_or_blend"),
+    )
+    from core.cognition.trace_learner import trace_learner
+    trace_learner.invalidate()
+    return {"reset_count": n}
+
+
+@app.get("/api/learning/recommend")
+async def learning_recommend(
+    domain:     str = Query(...),
+    session_id: str = Query(default="local"),
+):
+    """
+    Current TraceLearner recommendations for a domain + session.
+    Useful for debugging routing decisions before they happen.
+    """
+    from core.cognition.trace_learner import trace_learner
+    from core.session_state import get_state
+    state = get_state(session_id)
+    return {
+        "domain":             domain,
+        "session_id":         session_id,
+        "recommended_mode":   trace_learner.recommend_mode(domain, state),
+        "recommended_blend":  trace_learner.recommend_blend(domain, state),
+        "recommended_provider": trace_learner.recommend_provider("chat", state),
+        "cognitive_state":    state.snapshot(),
+    }
+
+
+# ── Cognitive modes introspection ───────────────────────────────────────────
+
+@app.get("/api/modes/status")
+async def modes_status():
+    """Registry status: active modes, blend presets, available by current state."""
+    from core.modes.registry import mode_registry
+    from core.session_state import active_sessions
+    return {
+        "registry":        mode_registry.status(),
+        "active_sessions": active_sessions(),
+    }
+
+
+@app.get("/api/modes/blends")
+async def modes_blends():
+    """Available blend presets with weights."""
+    from core.modes.blend import BLEND_PRESETS
+    return {
+        name: {k.value: round(v, 3) for k, v in weights.items()}
+        for name, weights in BLEND_PRESETS.items()
+    }
+
+
+@app.post("/api/modes/blend/test")
+async def test_blend(body: Dict):
+    """
+    Test a blend against a question without affecting the main session.
+    Body: {"question": "...", "domain": "...", "preset": "strategic_analytical"}
+    Returns: ModeResult dict.
+    """
+    question = (body.get("question") or "").strip()
+    domain   = body.get("domain") or "general"
+    preset   = body.get("preset") or "strategic_analytical"
+
+    if not question:
+        return {"error": "Campo 'question' vacío."}
+
+    import asyncio, functools
+    from core.modes.blend import ModeBlend
+    from core.modes.registry import mode_registry
+    from core.cognitive_state import CognitiveState
+
+    try:
+        blend = ModeBlend.from_preset(preset)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    state   = CognitiveState()
+    context = {"domain": domain, "question": question, "session_id": "blend-test"}
+
+    result = await asyncio.get_event_loop().run_in_executor(
+        None,
+        functools.partial(mode_registry.blend_and_activate, blend, context, state),
+    )
+    return {
+        "preset":    preset,
+        "result":    result.to_dict(),
+        "state_after": state.snapshot(),
+    }
 
 
 # ── Web search ─────────────────────────────────────────────────────────────

@@ -14,11 +14,14 @@ Sprint integrations:
 """
 
 import re
+import threading as _threading
 
-from core.voice.listener import record_until_silence, transcribe, preload as preload_stt
-from core.voice.speaker import speak, preload as preload_tts
+from core.voice.listener import record_until_silence, transcribe, is_speech_present, preload as preload_stt
+from core.voice.speaker import speak, stop as stop_tts, preload as preload_tts
 from core.orchestrator import process_request
 from core.llm import router as llm_router
+from core.kronos.detector import is_kronos_query
+from core.kronos.analyzer import quick_analysis as kronos_quick
 from core.memory.working_memory import session as wm
 from core.memory.emotional_tagger import tag as emotion_tag
 from core.memory.consolidator import run_at_startup
@@ -44,6 +47,7 @@ _BANNER = """
 _DOMAIN = "voz"
 _MAX_VOICE_CHARS = 350
 _MARKDOWN_RE = re.compile(r"(\*{1,2}|_{1,2}|`{1,3}|#{1,6}\s?|>\s?|[-*+]\s)")
+_tts_thread: _threading.Thread | None = None
 
 
 # ── text helpers ───────────────────────────────────────────────────────────
@@ -85,10 +89,22 @@ def _extract_response(result: dict) -> str:
     )
 
 
+def _say_async(text: str, emotion: str | None = None) -> None:
+    """Start TTS in a daemon thread; previous playback is interrupted first."""
+    global _tts_thread
+    stop_tts()
+    if _tts_thread and _tts_thread.is_alive():
+        _tts_thread.join(timeout=0.5)
+    _tts_thread = _threading.Thread(
+        target=speak, args=(text,), kwargs={"emotion": emotion}, daemon=True
+    )
+    _tts_thread.start()
+
+
 def _say(text: str, emotion: str | None = None) -> None:
     print(f"  Aletheia: {text}\n")
     try:
-        speak(text, emotion=emotion)
+        _say_async(text, emotion)
     except Exception as exc:
         print(f"  [error TTS] {exc}")
 
@@ -100,6 +116,9 @@ def _record_and_transcribe() -> str | None:
         audio = record_until_silence()
     except Exception as exc:
         print(f"  [error grabacion] {exc}")
+        return None
+    if not is_speech_present(audio):
+        print("  [ruido] Sin voz detectada — descartado.")
         return None
     try:
         text = transcribe(audio)
@@ -188,9 +207,79 @@ def _respond_conversational(text: str, noted_patterns: set[str]) -> bool:
     print(f"  Aletheia: {response}")
     wm.add(question=text, response=response, emotion_label="neutro")
     try:
-        speak(response, emotion=new_state.label)
+        _say_async(response, emotion=new_state.label)
     except Exception as exc:
         print(f"  [error TTS] {exc}")
+
+    suggestion = pattern_check(wm, noted_patterns)
+    if suggestion:
+        note_pattern_detected()
+        print()
+        _say(suggestion, emotion=new_state.label)
+
+    return True
+
+
+def _respond_fast(text: str, noted_patterns: set[str]) -> bool:
+    """Direct single LLM call for voice — replaces the 5-agent pipeline."""
+    user_emotion = emotion_tag(text)
+    prompt = (
+        "Eres Aletheia, IA cognitiva personal con presencia emocional e inteligencia sistémica. "
+        f"Responde de forma clara y directa, en 2-3 frases, sin markdown: {text}"
+    )
+    print("  [pensando...]", end="", flush=True)
+    try:
+        response = llm_router.generate(
+            task="chat",
+            prompt=prompt,
+            context={"domain": _DOMAIN},
+            temp=0.6,
+        )
+    except Exception as exc:
+        print()
+        print(f"  [error LLM] {exc}")
+        _say("Ollama no respondió a tiempo. Intenta con una pregunta más corta.", emotion=get_state().label)
+        return True
+    print()
+
+    response = _clean_for_voice(response or "")
+    if not response or _is_mock(response):
+        _say("Ollama tardó demasiado. Prueba de nuevo.", emotion=get_state().label)
+        return True
+
+    new_state = update_from_result({"llm_insight": response})
+    print(f"  Aletheia [{user_emotion.label} | {new_state.label}]: {response}")
+    wm.add(question=text, response=response, emotion_label=user_emotion.label)
+    _say_async(response, emotion=new_state.label)
+
+    suggestion = pattern_check(wm, noted_patterns)
+    if suggestion:
+        note_pattern_detected()
+        print()
+        _say(suggestion, emotion=new_state.label)
+
+    return True
+
+
+def _respond_kronos(text: str, noted_patterns: set[str]) -> bool:
+    """KRONOS persona — financial/vital cognitive analysis."""
+    print("  [KRONOS | pensando...]", end="", flush=True)
+    try:
+        response = kronos_quick(text)
+    except Exception as exc:
+        print()
+        print(f"  [error KRONOS] {exc}")
+        return _respond_fast(text, noted_patterns)
+    print()
+
+    response = _clean_for_voice(response or "")
+    if not response or _is_mock(response):
+        return _respond_fast(text, noted_patterns)
+
+    new_state = get_state()
+    print(f"  KRONOS: {response}")
+    wm.add(question=text, response=response, emotion_label="neutro_activo")
+    _say_async(response, emotion=new_state.label)
 
     suggestion = pattern_check(wm, noted_patterns)
     if suggestion:
@@ -231,9 +320,9 @@ def _respond_pipeline(text: str, noted_patterns: set[str]) -> bool:
     print(f"  Aletheia [{confidence:.0%} | {r_emotion.label} | est:{new_state.label}]: {response}")
     wm.add(question=text, response=response, emotion_label=user_emotion.label)
 
-    # Sprint 3 — speak with current emotional state modulation
+    # Sprint 3 — speak with current emotional state modulation (interruptible)
     try:
-        speak(response, emotion=new_state.label)
+        _say_async(response, emotion=new_state.label)
     except Exception as exc:
         print(f"  [error TTS] {exc}")
 
@@ -275,10 +364,12 @@ def run_voice_session() -> None:
             input("  [ENTER para hablar] ")
         except (KeyboardInterrupt, EOFError):
             print("\n  Sesion de voz cerrada.")
+            stop_tts()
             update_from_session(turn_count)
             wm.clear()
             break
 
+        stop_tts()  # interrupt TTS if still speaking
         text = _record_and_transcribe()
         if text is None:
             continue
@@ -286,13 +377,16 @@ def run_voice_session() -> None:
         user_emotion = emotion_tag(text)
         print(f"\n  Tu [{user_emotion.label}]: {text}")
 
-        # Sprint 7 — try agency first; then conversational bypass; then full pipeline
+        # Priority: agency → conversational → KRONOS → fast LLM
         handled = _handle_agency(text)
         if not handled:
             if _is_conversational(text):
                 if _respond_conversational(text, noted_patterns):
                     turn_count += 1
-            elif _respond_pipeline(text, noted_patterns):
+            elif is_kronos_query(text):
+                if _respond_kronos(text, noted_patterns):
+                    turn_count += 1
+            elif _respond_fast(text, noted_patterns):
                 turn_count += 1
         else:
             turn_count += 1

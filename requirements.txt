@@ -11,6 +11,7 @@ soundfile           # WAV I/O for TTS output
 numpy               # audio array processing
 piper-tts           # TTS: neural ONNX voices, natural prosody, model ~65 MB
 pyttsx3             # TTS fallback (Windows SAPI, always available)
+silero-vad          # VAD gate: filters ambient noise before STT (needs torch)
 
 # piper-tts downloads its voice model automatically on first run via huggingface_hub
 # (already installed as a faster-whisper dependency).
