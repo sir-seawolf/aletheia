@@ -16,7 +16,10 @@ Sprint integrations:
 import re
 import threading as _threading
 
-from core.voice.listener import record_until_silence, transcribe, is_speech_present, preload as preload_stt
+from core.voice.listener import (
+    record_until_silence, transcribe, is_speech_present,
+    preload as preload_stt, WakeWordDetector,
+)
 from core.voice.speaker import speak, stop as stop_tts, preload as preload_tts
 from core.orchestrator import process_request
 from core.llm import router as llm_router
@@ -40,6 +43,14 @@ _BANNER = """
 ╔══════════════════════════════════════════════╗
 ║         ALETHEIA -- Sesion de voz            ║
 ║  Push-to-talk: ENTER para hablar             ║
+║  Salir: Ctrl+C                               ║
+╚══════════════════════════════════════════════╝
+"""
+
+_BANNER_ALWAYS_ON = """
+╔══════════════════════════════════════════════╗
+║         ALETHEIA -- Escucha continua         ║
+║  Di 'Aletheia' para activar                  ║
 ║  Salir: Ctrl+C                               ║
 ╚══════════════════════════════════════════════╝
 """
@@ -390,3 +401,96 @@ def run_voice_session() -> None:
                 turn_count += 1
         else:
             turn_count += 1
+
+
+# ── always-on wake-word session ───────────────────────────────────────────────
+
+def run_voice_session_always_on() -> None:
+    """
+    Voice session that listens continuously for the 'Aletheia' wake word.
+
+    Uses WakeWordDetector (silero-VAD + faster-whisper tiny) in a background
+    thread. Falls back to push-to-talk if audio hardware is unavailable.
+    """
+    print(_BANNER_ALWAYS_ON)
+
+    state = get_state()
+    if state.label != "neutro":
+        print(f"  Estado emocional: {state.label}  "
+              f"(v={state.valence:+.2f} a={state.arousal:.2f})")
+
+    print("  Iniciando motores (STT + TTS + memoria)...")
+    preload_stt()
+    preload_tts()
+    run_at_startup()
+    wm.clear()
+
+    intro = briefing()
+    current_emotion = get_state().label
+    print()
+    _say(intro, emotion=current_emotion) if intro else print("  Listo.\n")
+
+    noted_patterns: set[str] = set()
+    turn_count = 0
+
+    detected_event = _threading.Event()
+
+    def _on_wake() -> None:
+        detected_event.set()
+
+    detector = WakeWordDetector()
+    using_wake = detector.start(_on_wake)
+
+    if using_wake:
+        print("  [modo siempre-activo] Esperando wake word 'Aletheia'...\n")
+    else:
+        print("  [warn] sounddevice no disponible — usando push-to-talk\n")
+
+    try:
+        while True:
+            if using_wake:
+                detected_event.wait()
+                detected_event.clear()
+                if detector._stop_event.is_set():
+                    break
+                print("  [wake] 'Aletheia' detectado — escuchando pregunta...")
+            else:
+                try:
+                    input("  [ENTER para hablar] ")
+                except (KeyboardInterrupt, EOFError):
+                    break
+
+            stop_tts()
+            text = _record_and_transcribe()
+            if text is None:
+                if using_wake:
+                    print("  [modo siempre-activo] Esperando wake word 'Aletheia'...\n")
+                continue
+
+            user_emotion = emotion_tag(text)
+            print(f"\n  Tu [{user_emotion.label}]: {text}")
+
+            handled = _handle_agency(text)
+            if not handled:
+                if _is_conversational(text):
+                    if _respond_conversational(text, noted_patterns):
+                        turn_count += 1
+                elif is_kronos_query(text):
+                    if _respond_kronos(text, noted_patterns):
+                        turn_count += 1
+                elif _respond_fast(text, noted_patterns):
+                    turn_count += 1
+            else:
+                turn_count += 1
+
+            if using_wake:
+                print("  [modo siempre-activo] Esperando wake word 'Aletheia'...\n")
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n  Sesion de voz cerrada.")
+    finally:
+        stop_tts()
+        if using_wake:
+            detector.stop()
+        update_from_session(turn_count)
+        wm.clear()

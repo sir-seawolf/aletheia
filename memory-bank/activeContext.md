@@ -92,13 +92,21 @@ orchestrator.process_request()
 
 Los modos 3.0 y el pipeline 1.x coexisten. La migración completa de agents/ a modes/ es el próximo paso.
 
+**Completado en sesión 2026-05-17 (estabilización):**
+
+- [x] `start.py` — fix UnicodeEncodeError en Windows (cp1252 → utf-8 reconfigure)
+- [x] `core/schemas/decision_contract.py` — pydantic V2: `schema_extra` → `json_schema_extra`
+- [x] `core/bootstrap/runtime.py` — `ModeRegistry.route_and_activate()` conectado al endpoint `/api/chat` via flag `use_v3_modes: true`; helper `_extract_reply` normaliza output de los 11 modos; fallback transparente a v1 si v3 falla
+- [x] `core/palace/reader.py` — mapeo domain→área (`finanzas`→`VIDA`, `tecnico`→`TECNOLOGIA`, etc.); fallback a todas las áreas para dominios desconocidos; tag `_area` en cada entry
+- [x] `core/palace/search.py` — typo `"tecnoogia"` → `"tecnologia"` corregido
+- [x] RAG — 25/25 artifacts indexados, 450 chunks en ChromaDB; búsqueda semántica operativa (scores ~0.58)
+
 **Pendientes inmediatos:**
 
-- Conectar `ModeRegistry.route_and_activate()` en el chat endpoint (`/api/chat`) como alternativa al pipeline 1.x
 - Verificar FatigueEngine end-to-end en sesión de voz (`start.py --voice`)
-- Activar RAG: `POST /api/rag/reindex`
 - Google Calendar: completar OAuth
 - Telegram: token en `PALACE/config/telegram.json`
+- Añadir toggle `use_v3_modes` en la UI (Settings o ThinkingPanel)
 
 **Backlog técnico:**
 

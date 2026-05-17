@@ -69,17 +69,29 @@
 
 ## Backlog / próximos pasos
 
-- **Conectar ModeRegistry al endpoint `/api/chat`** — activar routing 3.0 en producción
-- **Migrar agents/ a modes/**: explorer → ANALYTICAL, simulator → STRATEGIC, guardian → GUARDIAN
-- **RAG** — ejecutar `POST /api/rag/reindex` (deps OK: chromadb + nomic-embed-text)
+- **Toggle v3 modes en UI** — exponer `use_v3_modes` en Settings o ThinkingPanel
 - **Google Calendar** — completar OAuth en browser
 - **Telegram** — token en `PALACE/config/telegram.json`
-- **Wake word "Aletheia"** — entrenar openWakeWord
 - **ACO v3 MetaCortex** — implementar meta_cortex.py (actualmente vacío)
+
+## What works (actualizado 2026-05-17 — sesión 2)
+
+- **AnalyticalMode** — absorbe lógica de `agents/explorer`: keyword memory search, extracción LLM con fallback JSON/regex/texto, gap detection, confidence scoring. Output enriquecido: `{analysis, steps, facts, gaps, confidence}`.
+- **StrategicMode** — absorbe lógica de `agents/simulator`: generación de escenarios LLM con fallback JSON/regex/genérico, insight estratégico, output: `{plan, scenarios, risks, assumptions, insight}`.
+- **agents/** — marcados `Legacy v1 compat`; pipeline v1 intacto.
+- **WakeWordDetector** — `core/voice/listener.py`; hilo daemon: VAD gate + whisper tiny; detecta "Aletheia" y variantes; `start(callback)` / `stop()`.
+- **`run_voice_session_always_on()`** — sesión siempre-activa en `core/voice/session.py`; fallback a push-to-talk si sounddevice no disponible.
+- **`start.py --always-on`** — nuevo flag; combinar con `--voice`; llama `cli.py voice --always-on`.
+
+## What works (actualizado 2026-05-17)
+
+- **ModeRegistry → /api/chat** — routing 3.0 activo con flag `use_v3_modes: true`; `_extract_reply` normaliza salida de los 11 modos; fallback a v1 transparente
+- **PALACE reader** — mapeo domain→área correcto; fallback a todas las áreas para dominios desconocidos; datos PALACE ahora fluyen a los modos cognitivos
+- **RAG** — 25/25 artifacts indexados, 450 chunks ChromaDB; búsqueda semántica operativa
+- **start.py** — UnicodeEncodeError corregido en Windows; `--status` funciona sin crash
 
 ## Known issues
 
 - guardian_block=False no verificado con Ollama real en todas las rutas
-- Modos 3.0 aún no integrados en el pipeline de producción (coexisten con v1.x)
 - MemoryBus.search() depende de `semantic_graph.find_concepts()` — verificar que existe esa función
 - Sprint 4+5 (memoria profunda, proactividad): integración con voz pendiente end-to-end

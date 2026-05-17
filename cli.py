@@ -88,10 +88,16 @@ def test():
         raise click.ClickException("Tests failed")
 
 @cli.command()
-def voice():
-    """Start Aletheia voice session (offline push-to-talk, no internet needed)."""
-    from core.voice.session import run_voice_session
-    run_voice_session()
+@click.option("--always-on", "always_on", is_flag=True, default=False,
+              help="Continuous listening: say 'Aletheia' to activate (no ENTER needed)")
+def voice(always_on: bool):
+    """Start Aletheia voice session (offline, no internet needed)."""
+    if always_on:
+        from core.voice.session import run_voice_session_always_on
+        run_voice_session_always_on()
+    else:
+        from core.voice.session import run_voice_session
+        run_voice_session()
 
 
 @cli.command()

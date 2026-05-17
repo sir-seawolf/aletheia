@@ -4,10 +4,18 @@ Audio capture and speech-to-text using faster-whisper (100% offline).
 Model is downloaded once to PALACE/voice_models/whisper/ and cached.
 Silence detection stops recording automatically after SILENCE_DURATION seconds
 of audio below SILENCE_THRESHOLD RMS energy.
+
+WakeWordDetector — continuous background listener that calls a callback when
+"Aletheia" (or common variants) is detected. Uses silero-VAD gate + faster-whisper
+tiny model for low-latency classification. Requires sounddevice; degrades gracefully.
 """
 
+import re
+import threading
+import time
 import numpy as np
 from pathlib import Path
+from typing import Callable
 
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 1024
@@ -139,3 +147,117 @@ def preload():
     """Eagerly load the STT model so first response is fast."""
     _get_model()
     _get_vad_model()
+
+
+# ── Wake word detection ───────────────────────────────────────────────────────
+
+_WAKE_CHUNK_SECS = 2.0   # audio window per detection cycle
+_WAKE_MODEL_DIR  = Path(__file__).parent.parent.parent / "PALACE" / "voice_models" / "whisper"
+_wake_model      = None
+
+_WAKE_RE = re.compile(
+    r"aletheia|a\s*le\s*t[ei]a|hey\s+aletheia|oye\s+aletheia|"
+    r"ale\s*t[ei]a|a\s+le\s*te\s*ya",
+    re.IGNORECASE,
+)
+
+
+def _get_wake_model():
+    """Load a tiny whisper model dedicated to fast wake-word classification."""
+    global _wake_model
+    if _wake_model is None:
+        from faster_whisper import WhisperModel
+        _WAKE_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        _wake_model = WhisperModel(
+            "tiny",
+            download_root=str(_WAKE_MODEL_DIR),
+            device="cpu",
+            compute_type="int8",
+        )
+    return _wake_model
+
+
+def _transcribe_wake(audio: "np.ndarray") -> str:
+    """Transcribe a short audio chunk using the tiny wake-word model."""
+    model = _get_wake_model()
+    segments, _ = model.transcribe(
+        audio,
+        language="es",
+        beam_size=1,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 200},
+    )
+    return " ".join(seg.text for seg in segments).strip()
+
+
+class WakeWordDetector:
+    """
+    Continuous background listener for the 'Aletheia' wake word.
+
+    Usage::
+
+        detector = WakeWordDetector()
+        if detector.start(callback):
+            ...  # detector running in background
+        detector.stop()
+
+    The callback is called from the background thread — use a threading.Event
+    or similar to communicate with the main thread safely.
+    """
+
+    def __init__(self) -> None:
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self, on_detected: Callable[[], None]) -> bool:
+        """Start background detection. Returns False if sounddevice is unavailable."""
+        try:
+            import sounddevice as _sd  # noqa: F401
+        except ImportError:
+            return False
+
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._detect_loop,
+            args=(on_detected,),
+            daemon=True,
+            name="aletheia-wake-detector",
+        )
+        self._thread.start()
+        return True
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=_WAKE_CHUNK_SECS + 1.0)
+
+    def _detect_loop(self, on_detected: Callable[[], None]) -> None:
+        import sounddevice as sd
+
+        chunk_frames = int(_WAKE_CHUNK_SECS * SAMPLE_RATE)
+        while not self._stop_event.is_set():
+            try:
+                audio = sd.rec(
+                    chunk_frames,
+                    samplerate=SAMPLE_RATE,
+                    channels=1,
+                    dtype="float32",
+                )
+                sd.wait()
+
+                if self._stop_event.is_set():
+                    break
+
+                audio_flat = audio.flatten()
+
+                # Skip transcription when no speech detected
+                if not is_speech_present(audio_flat, min_speech_secs=0.3):
+                    continue
+
+                text = _transcribe_wake(audio_flat)
+                if text and _WAKE_RE.search(text):
+                    on_detected()
+
+            except Exception:
+                if not self._stop_event.is_set():
+                    time.sleep(0.5)

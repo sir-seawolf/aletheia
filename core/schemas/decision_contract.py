@@ -54,7 +54,7 @@ class DecisionReport(BaseModel):
         return v
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "version": "1.0",
                 "node_id": "node-123",

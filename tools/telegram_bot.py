@@ -190,6 +190,14 @@ def _build_app(token: str, allowed: list[int], api: str):
             lines.append(f"{i}. [{src}] (rel. {score:.0%})\n{res['text'][:200]}…\n")
         await update.message.reply_text("\n".join(lines)[:4000])
 
+    async def cmd_myid(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        uid = update.effective_user.id
+        await update.message.reply_text(
+            f"Tu Telegram user_id es: {uid}\n\n"
+            f"Añádelo a PALACE/config/telegram.json en allowed_user_ids\n"
+            f"para habilitar notificaciones proactivas de HESTIA."
+        )
+
     async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         uid = update.effective_user.id
         if not _allowed(uid):
@@ -244,6 +252,7 @@ def _build_app(token: str, allowed: list[int], api: str):
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start",  cmd_start))
     app.add_handler(CommandHandler("help",   cmd_help))
+    app.add_handler(CommandHandler("myid",   cmd_myid))
     app.add_handler(CommandHandler("agenda", cmd_agenda))
     app.add_handler(CommandHandler("gastos", cmd_gastos))
     app.add_handler(CommandHandler("fiscal", cmd_fiscal))

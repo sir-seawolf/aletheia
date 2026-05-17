@@ -1176,6 +1176,24 @@ async def system_status():
 
 # ── Chat ───────────────────────────────────────────────────────────────────
 
+def _extract_reply(result) -> str:
+    """Extract the main text response from a ModeResult output dict."""
+    output = result.output or {}
+    for key in ("analysis", "plan", "ideas", "reflection", "synthesis", "model", "response", "text"):
+        val = output.get(key)
+        if isinstance(val, str) and val.strip():
+            return val
+    if output.get("blocked"):
+        return f"[GUARDIAN] {output.get('reason', 'Solicitud bloqueada por seguridad.')}"
+    if output.get("deferred"):
+        return f"[EXECUTIVE] {output.get('reason', 'Acción diferida por fatiga cognitiva.')}"
+    # stats dict from MemoryCurator or unknown mode — summarise it
+    non_empty = {k: v for k, v in output.items() if v}
+    if non_empty:
+        return "Proceso completado: " + ", ".join(f"{k}={v}" for k, v in list(non_empty.items())[:4])
+    return "Procesado."
+
+
 @app.post("/api/chat")
 async def chat_endpoint(body: Dict):
     """
@@ -1244,7 +1262,51 @@ async def chat_endpoint(body: Dict):
             "history_len":  len(session.history),
         }
 
-    # 2. KRONOS routing — financial/vital analysis questions
+    # 2. Aletheia 3.0 cognitive routing — full ModeRegistry pipeline
+    if body.get("use_v3_modes", False):
+        try:
+            import asyncio, functools
+            from core.modes.registry import mode_registry
+            from core.session_state import get_state
+
+            if _tb is not None:
+                _tb.source = "v3_modes"
+
+            cog_context = {
+                "question":   message,
+                "domain":     domain,
+                "session_id": session_id,
+                "history":    session.to_list() if hasattr(session, "to_list") else [],
+            }
+            state = get_state(session_id)
+
+            mode_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                functools.partial(mode_registry.route_and_activate, cog_context, state),
+            )
+
+            reply = _extract_reply(mode_result)
+            session.add("assistant", reply)
+            _commit_trace(reply, confidence=mode_result.confidence, agent=mode_result.mode_id.value)
+            return {
+                "reply":        reply,
+                "session_id":   session_id,
+                "action":       None,
+                "action_data":  None,
+                "agent":        mode_result.mode_id.value,
+                "mode":         mode_result.mode_id.value,
+                "confidence":   round(mode_result.confidence, 3),
+                "history_len":  len(session.history),
+            }
+        except Exception as _v3_err:
+            # v3 path failed — fall through to v1 pipeline
+            try:
+                from core.event_bus import emit_event, build_event
+                emit_event(build_event(session_id, "v3_router", "routing", "v3_fallback", {"error": str(_v3_err)}))
+            except Exception:
+                pass
+
+    # 3. KRONOS routing — financial/vital analysis questions
     from core.kronos.detector import is_kronos_query
     if is_kronos_query(message):
         from core.kronos.analyzer import quick_analysis as kronos_quick

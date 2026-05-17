@@ -1,7 +1,7 @@
 """
 Guardian Agent - Adaptive validation layer with DecisionReport schema enforcement.
 
-STATUS: IMPLEMENTED (production v1.1)
+STATUS: Legacy v1 compat — use core/modes/guardian.py (GuardianMode) for new code.
 Dependencies: core.schemas.decision_contract, core.guardian.adaptive_policy
 Last stable version: v1.1
 

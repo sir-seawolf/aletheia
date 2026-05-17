@@ -19,6 +19,13 @@ import sys
 import time
 from pathlib import Path
 
+# Windows cp1252 terminals can't print box-drawing chars; force utf-8 output.
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).parent
 os.chdir(ROOT)
 
@@ -303,14 +310,20 @@ def start_telegram():
     return proc
 
 
-def start_voice(mode: str):
+def start_voice(mode: str, always_on: bool = False):
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["ALETHEIA_MODE"]    = mode
     print()
-    _ok("Iniciando sesión de voz (push-to-talk, Ctrl+C para salir)")
+    if always_on:
+        _ok("Iniciando sesión siempre-activa — di 'Aletheia' para activar (Ctrl+C para salir)")
+    else:
+        _ok("Iniciando sesión de voz (push-to-talk, Ctrl+C para salir)")
     print()
-    subprocess.run([sys.executable, "cli.py", "voice"], env=env)
+    cmd = [sys.executable, "cli.py", "voice"]
+    if always_on:
+        cmd.append("--always-on")
+    subprocess.run(cmd, env=env)
 
 
 def show_status():
@@ -427,12 +440,14 @@ def main():
         description="Aletheia launcher",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("--voice",    action="store_true", help="Sesión de voz en terminal")
-    parser.add_argument("--demo",     action="store_true", help="Modo demo (LLM mock, sin Ollama)")
-    parser.add_argument("--reset",    action="store_true", help="Reiniciar base de datos")
-    parser.add_argument("--status",   action="store_true", help="Mostrar estado y salir")
-    parser.add_argument("--stop",     action="store_true", help="Matar servidores en puertos 8000/3000")
-    parser.add_argument("--telegram", action="store_true", help="Arrancar bot de Telegram junto al servidor web")
+    parser.add_argument("--voice",     action="store_true", help="Sesión de voz en terminal")
+    parser.add_argument("--always-on", action="store_true", dest="always_on",
+                        help="Escucha continua — di 'Aletheia' para activar (requiere --voice)")
+    parser.add_argument("--demo",      action="store_true", help="Modo demo (LLM mock, sin Ollama)")
+    parser.add_argument("--reset",     action="store_true", help="Reiniciar base de datos")
+    parser.add_argument("--status",    action="store_true", help="Mostrar estado y salir")
+    parser.add_argument("--stop",      action="store_true", help="Matar servidores en puertos 8000/3000")
+    parser.add_argument("--telegram",  action="store_true", help="Arrancar bot de Telegram junto al servidor web")
     args = parser.parse_args()
 
     print()
@@ -459,7 +474,7 @@ def main():
     mode = step_ollama(args.demo)
 
     if args.voice:
-        start_voice(mode)
+        start_voice(mode, always_on=args.always_on)
     else:
         step_ui_deps()
         if args.telegram:

@@ -1,7 +1,7 @@
 """
 Explorer Agent - Cold analyst: memory search, relevance selection, gap detection.
 
-STATUS: IMPLEMENTED (production v1.1)
+STATUS: Legacy v1 compat — use core/modes/analytical.py (AnalyticalMode) for new code.
 Dependencies: core.context, core.llm.router, memory.models, core.event_bus
 Last stable version: v1.1
 

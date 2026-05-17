@@ -1,7 +1,7 @@
 """
 Simulator Agent - DecisionReport generation using LLMRouter.
 
-STATUS: IMPLEMENTED (production v1.1)
+STATUS: Legacy v1 compat — use core/modes/strategic.py (StrategicMode) for new code.
 Dependencies: core.llm.router, core.schemas.decision_contract, ai.prompts
 Last stable version: v1.2
 
