@@ -1,7 +1,7 @@
 """
 GUARDIAN mode — security, risk analysis, constraint enforcement, privacy, permission validation.
 
-Wraps agents.guardian for pipeline-level validation; adds mode-level risk scoring.
+Wraps core.pipeline.guardian for pipeline-level validation; adds mode-level risk scoring.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ class GuardianMode(CognitiveMode):
 
     def _execute(self, context: Dict[str, Any], state: CognitiveState) -> ModeResult:
         question = context.get("question", "").lower()
-        domain   = context.get("domain", "general")
 
         # Hard-block check (deterministic, no LLM)
         for trigger in _HARD_BLOCK:
@@ -47,7 +46,7 @@ class GuardianMode(CognitiveMode):
         # Use existing pipeline guardian for deeper validation when not blocked
         if not blocked:
             try:
-                from agents.guardian import validate
+                from core.pipeline.guardian import validate
                 pipeline_output = context.get("pipeline_output", {})
                 if pipeline_output:
                     validated = validate(pipeline_output, policy=context.get("aco_policy", {}))

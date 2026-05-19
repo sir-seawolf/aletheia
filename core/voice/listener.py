@@ -151,9 +151,12 @@ def preload():
 
 # ── Wake word detection ───────────────────────────────────────────────────────
 
-_WAKE_CHUNK_SECS = 2.0   # audio window per detection cycle
-_WAKE_MODEL_DIR  = Path(__file__).parent.parent.parent / "PALACE" / "voice_models" / "whisper"
-_wake_model      = None
+_WAKE_MODEL_DIR = Path(__file__).parent.parent.parent / "PALACE" / "voice_models"
+_OWW_MODEL_PATH = _WAKE_MODEL_DIR / "oww" / "aletheia.onnx"
+
+# Whisper-based fallback constants
+_WAKE_CHUNK_SECS = 2.0
+_wake_whisper_model = None
 
 _WAKE_RE = re.compile(
     r"aletheia|a\s*le\s*t[ei]a|hey\s+aletheia|oye\s+aletheia|"
@@ -161,66 +164,90 @@ _WAKE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# openWakeWord: 80 ms chunks at 16 kHz
+_OWW_CHUNK_FRAMES = 1280
+_OWW_THRESHOLD    = 0.5
+_OWW_COOLDOWN     = 1.5   # seconds to ignore after a detection
 
-def _get_wake_model():
-    """Load a tiny whisper model dedicated to fast wake-word classification."""
-    global _wake_model
-    if _wake_model is None:
+
+def _get_wake_whisper():
+    global _wake_whisper_model
+    if _wake_whisper_model is None:
         from faster_whisper import WhisperModel
-        _WAKE_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        _wake_model = WhisperModel(
+        (_WAKE_MODEL_DIR / "whisper").mkdir(parents=True, exist_ok=True)
+        _wake_whisper_model = WhisperModel(
             "tiny",
-            download_root=str(_WAKE_MODEL_DIR),
+            download_root=str(_WAKE_MODEL_DIR / "whisper"),
             device="cpu",
             compute_type="int8",
         )
-    return _wake_model
+    return _wake_whisper_model
 
 
-def _transcribe_wake(audio: "np.ndarray") -> str:
-    """Transcribe a short audio chunk using the tiny wake-word model."""
-    model = _get_wake_model()
+def _transcribe_wake(audio: np.ndarray) -> str:
+    model = _get_wake_whisper()
     segments, _ = model.transcribe(
-        audio,
-        language="es",
-        beam_size=1,
-        vad_filter=True,
+        audio, language="es", beam_size=1, vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 200},
     )
     return " ".join(seg.text for seg in segments).strip()
+
+
+def _oww_available() -> bool:
+    try:
+        import openwakeword  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 class WakeWordDetector:
     """
     Continuous background listener for the 'Aletheia' wake word.
 
+    Backend selection (automatic):
+      1. openWakeWord + custom model  (PALACE/voice_models/oww/aletheia.onnx)
+         → ~85 ms latency, ~3 % CPU
+      2. Whisper-tiny fallback
+         → ~2 s latency, ~15 % CPU
+         (train the custom model with: python start.py --train-wake-word)
+
     Usage::
 
         detector = WakeWordDetector()
-        if detector.start(callback):
-            ...  # detector running in background
+        if detector.start(callback):   # False if no microphone
+            ...
         detector.stop()
-
-    The callback is called from the background thread — use a threading.Event
-    or similar to communicate with the main thread safely.
+        print(detector.backend)        # "oww_custom" | "whisper"
     """
 
     def __init__(self) -> None:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self.backend: str = "none"
 
     def start(self, on_detected: Callable[[], None]) -> bool:
-        """Start background detection. Returns False if sounddevice is unavailable."""
         try:
             import sounddevice as _sd  # noqa: F401
         except ImportError:
             return False
 
         self._stop_event.clear()
+
+        if _oww_available() and _OWW_MODEL_PATH.exists():
+            self.backend = "oww_custom"
+            target = self._loop_oww
+        else:
+            self.backend = "whisper"
+            target = self._loop_whisper
+            if _oww_available() and not _OWW_MODEL_PATH.exists():
+                print(
+                    "  [wake] openWakeWord instalado pero sin modelo personalizado. "
+                    "Usa: python start.py --train-wake-word"
+                )
+
         self._thread = threading.Thread(
-            target=self._detect_loop,
-            args=(on_detected,),
-            daemon=True,
+            target=target, args=(on_detected,), daemon=True,
             name="aletheia-wake-detector",
         )
         self._thread.start()
@@ -231,26 +258,61 @@ class WakeWordDetector:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=_WAKE_CHUNK_SECS + 1.0)
 
-    def _detect_loop(self, on_detected: Callable[[], None]) -> None:
+    # ── openWakeWord backend ──────────────────────────────────────────────
+
+    def _loop_oww(self, on_detected: Callable[[], None]) -> None:
+        import sounddevice as sd
+        from openwakeword.model import Model
+
+        _OWW_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        oww = Model(
+            wakeword_models=[str(_OWW_MODEL_PATH)],
+            inference_framework="onnx",
+        )
+        model_name = _OWW_MODEL_PATH.stem   # "aletheia"
+        last_detected = 0.0
+
+        print(f"  [wake] openWakeWord activo — modelo '{model_name}' (umbral {_OWW_THRESHOLD})")
+
+        while not self._stop_event.is_set():
+            try:
+                chunk = sd.rec(
+                    _OWW_CHUNK_FRAMES, samplerate=SAMPLE_RATE,
+                    channels=1, dtype="int16",
+                )
+                sd.wait()
+                if self._stop_event.is_set():
+                    break
+
+                prediction = oww.predict(chunk.flatten())
+                confidence = float(prediction.get(model_name, 0.0))
+
+                now = time.monotonic()
+                if confidence >= _OWW_THRESHOLD and (now - last_detected) > _OWW_COOLDOWN:
+                    last_detected = now
+                    on_detected()
+
+            except Exception:
+                if not self._stop_event.is_set():
+                    time.sleep(0.1)
+
+    # ── Whisper-tiny fallback backend ─────────────────────────────────────
+
+    def _loop_whisper(self, on_detected: Callable[[], None]) -> None:
         import sounddevice as sd
 
         chunk_frames = int(_WAKE_CHUNK_SECS * SAMPLE_RATE)
         while not self._stop_event.is_set():
             try:
                 audio = sd.rec(
-                    chunk_frames,
-                    samplerate=SAMPLE_RATE,
-                    channels=1,
-                    dtype="float32",
+                    chunk_frames, samplerate=SAMPLE_RATE,
+                    channels=1, dtype="float32",
                 )
                 sd.wait()
-
                 if self._stop_event.is_set():
                     break
 
                 audio_flat = audio.flatten()
-
-                # Skip transcription when no speech detected
                 if not is_speech_present(audio_flat, min_speech_secs=0.3):
                     continue
 

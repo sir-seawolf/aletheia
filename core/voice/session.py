@@ -15,6 +15,7 @@ Sprint integrations:
 
 import re
 import threading as _threading
+import uuid
 
 from core.voice.listener import (
     record_until_silence, transcribe, is_speech_present,
@@ -120,6 +121,22 @@ def _say(text: str, emotion: str | None = None) -> None:
         print(f"  [error TTS] {exc}")
 
 
+# ── fatigue display ───────────────────────────────────────────────────────
+
+def _print_fatigue_warning(session_id: str) -> None:
+    """Print a one-line fatigue indicator when fatigue > 0.6."""
+    try:
+        from core.session_state import get_state as _gs
+        from core.fatigue.engine import fatigue_engine
+        st = _gs(session_id)
+        if st.fatigue > 0.8:
+            print(f"  [fatiga CRITICA {st.fatigue:.0%}] Respuestas pueden ser degradadas.")
+        elif st.fatigue > 0.6:
+            print(f"  [fatiga alta {st.fatigue:.0%}] Modo simplificado activo.")
+    except Exception:
+        pass
+
+
 # ── per-turn helpers ───────────────────────────────────────────────────────
 
 def _record_and_transcribe() -> str | None:
@@ -194,7 +211,7 @@ def _is_conversational(text: str) -> bool:
     return False
 
 
-def _respond_conversational(text: str, noted_patterns: set[str]) -> bool:
+def _respond_conversational(text: str, noted_patterns: set[str], session_id: str = "local") -> bool:
     prompt = (
         f"Eres Aletheia, una IA acompañante con presencia emocional. "
         f"Responde de forma natural, breve y cálida a: '{text}'"
@@ -203,7 +220,7 @@ def _respond_conversational(text: str, noted_patterns: set[str]) -> bool:
         response = llm_router.generate(
             task="chat",
             prompt=prompt,
-            context={"domain": "conversacion"},
+            context={"domain": "conversacion", "session_id": session_id},
             temp=0.7,
         )
     except Exception as exc:
@@ -231,19 +248,20 @@ def _respond_conversational(text: str, noted_patterns: set[str]) -> bool:
     return True
 
 
-def _respond_fast(text: str, noted_patterns: set[str]) -> bool:
+def _respond_fast(text: str, noted_patterns: set[str], session_id: str = "local") -> bool:
     """Direct single LLM call for voice — replaces the 5-agent pipeline."""
     user_emotion = emotion_tag(text)
     prompt = (
         "Eres Aletheia, IA cognitiva personal con presencia emocional e inteligencia sistémica. "
         f"Responde de forma clara y directa, en 2-3 frases, sin markdown: {text}"
     )
+    _print_fatigue_warning(session_id)
     print("  [pensando...]", end="", flush=True)
     try:
         response = llm_router.generate(
             task="chat",
             prompt=prompt,
-            context={"domain": _DOMAIN},
+            context={"domain": _DOMAIN, "session_id": session_id},
             temp=0.6,
         )
     except Exception as exc:
@@ -272,20 +290,20 @@ def _respond_fast(text: str, noted_patterns: set[str]) -> bool:
     return True
 
 
-def _respond_kronos(text: str, noted_patterns: set[str]) -> bool:
+def _respond_kronos(text: str, noted_patterns: set[str], session_id: str = "local") -> bool:
     """KRONOS persona — financial/vital cognitive analysis."""
     print("  [KRONOS | pensando...]", end="", flush=True)
     try:
-        response = kronos_quick(text)
+        response = kronos_quick(text, session_id=session_id)
     except Exception as exc:
         print()
         print(f"  [error KRONOS] {exc}")
-        return _respond_fast(text, noted_patterns)
+        return _respond_fast(text, noted_patterns, session_id)
     print()
 
     response = _clean_for_voice(response or "")
     if not response or _is_mock(response):
-        return _respond_fast(text, noted_patterns)
+        return _respond_fast(text, noted_patterns, session_id)
 
     new_state = get_state()
     print(f"  KRONOS: {response}")
@@ -301,7 +319,7 @@ def _respond_kronos(text: str, noted_patterns: set[str]) -> bool:
     return True
 
 
-def _respond_pipeline(text: str, noted_patterns: set[str]) -> bool:
+def _respond_pipeline(text: str, noted_patterns: set[str], session_id: str = "local") -> bool:
     """
     Run cognitive pipeline, speak response, update emotional state.
     For complex questions, runs ecosystem debate first (Sprint 8).
@@ -318,7 +336,7 @@ def _respond_pipeline(text: str, noted_patterns: set[str]) -> bool:
             pass   # never block the main pipeline
 
     try:
-        result = process_request(_DOMAIN, text)
+        result = process_request(_DOMAIN, text, session_id=session_id)
     except Exception as exc:
         print(f"  [error pipeline] {exc}")
         return False
@@ -350,6 +368,8 @@ def _respond_pipeline(text: str, noted_patterns: set[str]) -> bool:
 
 def run_voice_session() -> None:
     print(_BANNER)
+
+    session_id = f"voice_{uuid.uuid4().hex[:8]}"
 
     state = get_state()
     if state.label != "neutro":
@@ -392,12 +412,12 @@ def run_voice_session() -> None:
         handled = _handle_agency(text)
         if not handled:
             if _is_conversational(text):
-                if _respond_conversational(text, noted_patterns):
+                if _respond_conversational(text, noted_patterns, session_id):
                     turn_count += 1
             elif is_kronos_query(text):
-                if _respond_kronos(text, noted_patterns):
+                if _respond_kronos(text, noted_patterns, session_id):
                     turn_count += 1
-            elif _respond_fast(text, noted_patterns):
+            elif _respond_fast(text, noted_patterns, session_id):
                 turn_count += 1
         else:
             turn_count += 1
@@ -413,6 +433,8 @@ def run_voice_session_always_on() -> None:
     thread. Falls back to push-to-talk if audio hardware is unavailable.
     """
     print(_BANNER_ALWAYS_ON)
+
+    session_id = f"voice_{uuid.uuid4().hex[:8]}"
 
     state = get_state()
     if state.label != "neutro":
@@ -473,12 +495,12 @@ def run_voice_session_always_on() -> None:
             handled = _handle_agency(text)
             if not handled:
                 if _is_conversational(text):
-                    if _respond_conversational(text, noted_patterns):
+                    if _respond_conversational(text, noted_patterns, session_id):
                         turn_count += 1
                 elif is_kronos_query(text):
-                    if _respond_kronos(text, noted_patterns):
+                    if _respond_kronos(text, noted_patterns, session_id):
                         turn_count += 1
-                elif _respond_fast(text, noted_patterns):
+                elif _respond_fast(text, noted_patterns, session_id):
                     turn_count += 1
             else:
                 turn_count += 1

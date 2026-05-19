@@ -447,7 +447,9 @@ def main():
     parser.add_argument("--reset",     action="store_true", help="Reiniciar base de datos")
     parser.add_argument("--status",    action="store_true", help="Mostrar estado y salir")
     parser.add_argument("--stop",      action="store_true", help="Matar servidores en puertos 8000/3000")
-    parser.add_argument("--telegram",  action="store_true", help="Arrancar bot de Telegram junto al servidor web")
+    parser.add_argument("--telegram",        action="store_true", help="Arrancar bot de Telegram junto al servidor web")
+    parser.add_argument("--train-wake-word", action="store_true", dest="train_wake_word",
+                        help="Entrenar modelo personalizado de wake word 'Aletheia' (openWakeWord)")
     args = parser.parse_args()
 
     print()
@@ -466,6 +468,17 @@ def main():
 
     if args.status:
         show_status()
+        return
+
+    if args.train_wake_word:
+        _info("Entrenando wake word personalizado…")
+        try:
+            from core.voice.wake_trainer import train
+            success = train(verbose=True)
+            if not success:
+                _warn("El modelo no se generó automáticamente (ver instrucciones arriba).")
+        except Exception as exc:
+            _err(f"Error durante el entrenamiento: {exc}")
         return
 
     # Standard startup sequence

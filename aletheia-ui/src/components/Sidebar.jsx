@@ -8,12 +8,16 @@
  *   onDomain(d)
  *   status: { provider, ollama_ok, docs, memory, fin_total }
  *   apiUrl: string
+ *   setupMissing: number  — count of unconfigured systems (shows badge on Inicio)
  */
 import { useState, useEffect } from "react";
 
 const VIEWS = [
+  { id: "setup",     icon: "◎",  label: "Inicio" },
+  { id: "usecases",  icon: "◇",  label: "Capacidades" },
   { id: "chat",      icon: "💬", label: "Chat" },
   { id: "simulate",  icon: "🧠", label: "Análisis" },
+  { id: "projects",  icon: "⚖️", label: "Proyectos" },
   { id: "docs",      icon: "📂", label: "Documentos" },
   { id: "cognitive", icon: "◈",  label: "Cognitivo" },
   { id: "dashboard", icon: "📊", label: "Dashboard" },
@@ -32,7 +36,7 @@ const DOMAINS = [
   { value: "creatividad", icon: "✨" },
 ];
 
-export default function Sidebar({ activeView, onNavigate, domain, onDomain, status = {}, apiUrl }) {
+export default function Sidebar({ activeView, onNavigate, domain, onDomain, status = {}, apiUrl, setupMissing = 0 }) {
   const [recentArtifacts, setRecentArtifacts] = useState([]);
   const [expanded, setExpanded]               = useState(true);
 
@@ -46,7 +50,8 @@ export default function Sidebar({ activeView, onNavigate, domain, onDomain, stat
   const w = expanded ? 220 : 52;
 
   const navBtn = (view) => {
-    const active = activeView === view.id;
+    const active  = activeView === view.id;
+    const showBadge = view.id === "setup" && setupMissing > 0;
     return (
       <button
         key={view.id}
@@ -64,10 +69,35 @@ export default function Sidebar({ activeView, onNavigate, domain, onDomain, stat
           fontSize: 13, fontWeight: active ? 600 : 400,
           cursor: "pointer", textAlign: "left",
           transition: "all 0.15s",
+          position: "relative",
         }}
       >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>{view.icon}</span>
-        {expanded && <span>{view.label}</span>}
+        <span style={{ fontSize: 15, flexShrink: 0, position: "relative" }}>
+          {view.icon}
+          {showBadge && !expanded && (
+            <span style={{
+              position: "absolute", top: -4, right: -6,
+              minWidth: 14, height: 14, borderRadius: 7,
+              background: "#f87171", color: "#fff",
+              fontSize: 9, fontWeight: 700, lineHeight: "14px",
+              textAlign: "center", padding: "0 3px",
+              border: "1.5px solid #060610",
+            }}>
+              {setupMissing}
+            </span>
+          )}
+        </span>
+        {expanded && <span style={{ flex: 1 }}>{view.label}</span>}
+        {expanded && showBadge && (
+          <span style={{
+            minWidth: 18, height: 18, borderRadius: 9,
+            background: "#f87171", color: "#fff",
+            fontSize: 10, fontWeight: 700, lineHeight: "18px",
+            textAlign: "center", padding: "0 4px",
+          }}>
+            {setupMissing}
+          </span>
+        )}
       </button>
     );
   };

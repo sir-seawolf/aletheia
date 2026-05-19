@@ -114,13 +114,28 @@ class MemoryBus:
         domain: str,
         content: Any,
         metadata: Optional[Dict] = None,
+        session_id: str = "local",
     ) -> None:
-        """Write to working memory and persist to SQLite."""
+        """Write to working memory and persist to SQLite.
+        When deferred_mode is active, also enqueues to raw_buffer for deep
+        processing during the next consolidation (cognitive sleep) run.
+        """
         with _lock:
             self._working[domain] = content
         try:
             from memory.service import store_result
             store_result(domain, content)
+        except Exception:
+            pass
+        # Deferred mode — enqueue for deep consolidation later (best-effort)
+        try:
+            from core.config.preferences import load as _lp
+            if _lp().get("system", {}).get("deferred_mode", False):
+                from core.memory.raw_buffer import raw_buffer
+                payload = {"content": content, "session_id": session_id}
+                if metadata:
+                    payload["metadata"] = metadata
+                raw_buffer.append(domain, payload, session_id)
         except Exception:
             pass
 

@@ -90,28 +90,42 @@ class ObserverMode(CognitiveMode):
         routed = None
         source = "keyword"
 
-        # Priority 1 — TraceLearner blend recommendation (data-driven)
+        # Priority 0 — MetaCortex blend (session-level, highest freshness)
         if state.energy >= _BLEND_MIN_ENERGY and not state.is_fatigued:
+            mc_blend = self._metacortex_blend(state)
+            if mc_blend is not None:
+                blend  = mc_blend
+                source = "metacortex_blend"
+
+        # Priority 1 — MetaCortex mode (session-level)
+        if blend is None:
+            mc_mode = self._metacortex_mode(state)
+            if mc_mode is not None:
+                routed = mc_mode
+                source = "metacortex_mode"
+
+        # Priority 2 — TraceLearner blend recommendation (cross-session, persistent)
+        if blend is None and routed is None and state.energy >= _BLEND_MIN_ENERGY and not state.is_fatigued:
             learned_blend = self._learned_blend(domain, state)
             if learned_blend is not None:
                 blend  = learned_blend
                 source = "learned_blend"
 
-        # Priority 2 — TraceLearner single-mode recommendation (data-driven)
-        if blend is None:
+        # Priority 3 — TraceLearner single-mode recommendation (cross-session)
+        if blend is None and routed is None:
             learned_mode = self._learned_mode(domain, state)
             if learned_mode is not None:
                 routed = learned_mode
                 source = "learned_mode"
 
-        # Priority 3 — keyword blend detection
+        # Priority 4 — keyword blend detection
         if blend is None and routed is None:
             if state.energy >= _BLEND_MIN_ENERGY and not state.is_fatigued:
                 blend = self._detect_blend(question)
                 if blend:
                     source = "blend_keyword"
 
-        # Priority 4 — keyword single-mode routing (always-on fallback)
+        # Priority 5 — keyword single-mode routing (always-on fallback)
         if blend is None and routed is None:
             routed = self._route(question, state)
             source = "keyword"
@@ -162,6 +176,29 @@ class ObserverMode(CognitiveMode):
                         synthesis=synthesis,
                         label=preset_name,
                     )
+        return None
+
+    def _metacortex_mode(self, state: CognitiveState) -> Optional[ModeID]:
+        """Consult MetaCortex for session-level single-mode recommendation."""
+        try:
+            from core.aco.v3.meta_cortex import meta_cortex
+            rec = meta_cortex.recommend_mode(state)
+            if rec:
+                return ModeID(rec)
+        except Exception:
+            pass
+        return None
+
+    def _metacortex_blend(self, state: CognitiveState) -> Optional[Any]:
+        """Consult MetaCortex for session-level blend recommendation."""
+        try:
+            from core.aco.v3.meta_cortex import meta_cortex
+            from core.modes.blend import ModeBlend
+            preset_name = meta_cortex.recommend_blend(state)
+            if preset_name:
+                return ModeBlend.from_preset(preset_name)
+        except Exception:
+            pass
         return None
 
     def _learned_mode(

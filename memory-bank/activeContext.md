@@ -101,16 +101,63 @@ Los modos 3.0 y el pipeline 1.x coexisten. La migración completa de agents/ a m
 - [x] `core/palace/search.py` — typo `"tecnoogia"` → `"tecnologia"` corregido
 - [x] RAG — 25/25 artifacts indexados, 450 chunks en ChromaDB; búsqueda semántica operativa (scores ~0.58)
 
-**Pendientes inmediatos:**
+**Completado en sesión 2026-05-18:**
 
-- Verificar FatigueEngine end-to-end en sesión de voz (`start.py --voice`)
-- Google Calendar: completar OAuth
-- Telegram: token en `PALACE/config/telegram.json`
-- Añadir toggle `use_v3_modes` en la UI (Settings o ThinkingPanel)
+- `semantic_graph.find_concepts()` — bug silencioso corregido; MemoryBus.search() operativo
+- Toggle `use_v3_modes` — Settings → Sistema; persiste en preferences.json; /api/chat lo lee
+- ACO v3 MetaCortex — EMA policy_stats por sesión; ObserverMode prioridades 0/1; feedback desde runtime
+- FatigueEngine en voz — session_id único por sesión de voz; propagado a todos los helpers
+- Google Calendar + Telegram en UI — Settings "Calendario" y "Telegram"; sin edición manual de JSON
+- SetupDashboard — vista "Inicio"; 8 sistemas con estado; badge en Sidebar; /api/setup/status
+- UseCasesPage — vista "Capacidades"; 9 casos con velocidad/disponibilidad; ejemplos clicables
+- ConsolidationEngine — sueño cognitivo; raw_buffer + motor con run/stop/schedule; UI en CognitiveDashboard
+- Modo diferido — toggle UI; MemoryBus.store() encola en raw_buffer cuando activo
 
-**Backlog técnico:**
+**Completado en sesión 2026-05-19 — Sistema de Fichas de Proyecto:**
 
-- Integrar MemoryBus en todos los modos (algunos aún acceden a PALACE directamente)
-- Migrar agents/ a modes/ (explorer → ANALYTICAL, guardian → GUARDIAN, etc.)
-- ACO v3 MetaCortex (core/aco/v3/meta_cortex.py — actualmente vacío)
-- Wake word "Aletheia" (openWakeWord personalizado)
+- `core/projects/__init__.py` + `manager.py` + `analyzer.py` — nuevo módulo PROJECTS
+- `ProjectManager` — CRUD SQLite (`memory/data/projects.db`), tabla `project_cards`
+- 9 tipos de proyecto: `life_decision`, `career`, `home_improvement`, `purchase`, `financial_goal`, `health_wellness`, `education`, `business`, `other`
+- Dimensiones capturadas: tiempo, económico (coste/beneficio/ROI/ahorro previo), psicológico, físico, relacional
+- `compute_score()` — puntuación global -10..+10 ponderada (fin 40%, psy 30%, phys 15%, rel 15%)
+- `get_recommendation()` — proceed / defer / review / discard
+- `analyze_with_llm()` — análisis narrativo asíncrono con LLMRouter
+- 9 endpoints `/api/projects/*` en runtime.py (CRUD + reminders + balance + types + analyze)
+- `ProjectsPage.jsx` — vista completa: lista con filtros, tarjetas, formulario multi-tab (básico/dimensiones/pros-contras), panel de detalle, balance de portafolio, análisis LLM inline
+- Sidebar + App.js actualizados — entrada "⚖️ Proyectos"
+
+**Completado en sesión 2026-05-19 — Detección de patrones cognitivos (paso 6 del sueño):**
+
+- `core/cognition/pattern_detector.py` — PatternDetector singleton; 6 heurísticas SQL puras sobre `cognitive_traces` + `memory_nodes`; tabla `cognitive_patterns` en aletheia.db; `detect(since_hours)`, `get_patterns()`, `mark_read()`, `mark_all_read()`, `unread_count()`
+- Patrones detectados: `recurring_topic`, `dominant_mode`, `new_concept`, `cross_domain_link`, `high_fatigue_session`, `low_confidence_zone`
+- `system_init.py` — migración idempotente de `cognitive_patterns` en startup
+- `consolidation_engine.py` — paso 6 añadido: `pattern_detector.detect(since_hours=48)` tras compress; `patterns_found` en stats
+- `runtime.py` — 5 endpoints: `GET /api/consolidation/patterns`, `GET .../unread_count`, `POST .../mark_all_read`, `POST .../{id}/mark_read`, `POST .../detect`
+- `CognitiveDashboard.jsx` — `PatternsSubSection` dentro de SleepSection Card; lista de patrones con icono, badge "nuevo", barra de relevancia; botones "Detectar ahora" y "Marcar todo leído"
+
+**Completado en sesión 2026-05-19 — Migración agents/ → core/pipeline/:**
+
+- `core/pipeline/__init__.py` + `explorer.py` + `simulator.py` + `guardian.py` — lógica idéntica, nueva ubicación canónica
+- `core/orchestrator.py` — `from agents import` → `from core.pipeline import`
+- `core/modes/guardian.py` — `from agents.guardian import` → `from core.pipeline.guardian import`; variable `domain` sin usar eliminada
+- `tests/system/test_full_pipeline.py` — mocks actualizados a `core.pipeline.*`; import directo eliminado (unused)
+- `tests/test_guardian_behavior.py`, `test_changes.py`, `test_explorer_profile.py`, `test_simulator_profile_fallback.py` — imports actualizados
+- `agents/` — directorio eliminado por completo (incluidos `simulator_helpers.py` y `_build_simulator_helpers.py` que eran código muerto)
+
+**Completado en sesión 2026-05-19 — Wake word con openWakeWord:**
+
+- `core/voice/listener.py` — `WakeWordDetector` refactorizado: backend `oww_custom` (openWakeWord + modelo personalizado) con fallback a `whisper` (Whisper-tiny, comportamiento anterior); selección automática en `start()`; propiedad `backend` expuesta; chunks de 80ms en lugar de 2s
+- `core/voice/wake_trainer.py` — entrenador completo: genera clips TTS con Piper/espeak/gTTS, normaliza a 16kHz, entrena con openWakeWord, guarda `PALACE/voice_models/oww/aletheia.onnx`; instrucciones de Colab si falla el entrenamiento automático
+- `start.py` — flag `--train-wake-word` añadido
+
+**Uso del wake word:**
+
+```bash
+pip install openwakeword torch torchaudio librosa soundfile
+python start.py --train-wake-word    # genera aletheia.onnx (~5-15 min)
+python start.py --voice --always-on  # usa openWakeWord automáticamente
+```
+
+**Backlog adicional:**
+
+- Pruebas end-to-end del sistema completo

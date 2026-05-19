@@ -49,6 +49,14 @@ def init_system(mode: str = "DEV"):
         print("✅ Cognitive replay table ready.")
     except Exception as e:
         print(f"⚠️  Replay table warning: {e}")
+
+    # 1e. Cognitive patterns table
+    try:
+        from core.cognition.pattern_detector import pattern_detector
+        pattern_detector._init()
+        print("✅ Cognitive patterns table ready.")
+    except Exception as e:
+        print(f"⚠️  Patterns table warning: {e}")
     
     # 2. LLM / Ollama
     try:

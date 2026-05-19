@@ -129,6 +129,15 @@ export default function ChatView({ apiUrl = "http://localhost:8000", sessionId, 
   }, [sessionId, apiUrl]);
 
   useEffect(() => {
+    const handler = (e) => {
+      const prompt = e.detail;
+      if (prompt) send(prompt);
+    };
+    window.addEventListener("aletheia:prefill", handler);
+    return () => window.removeEventListener("aletheia:prefill", handler);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [history, loading]);
 

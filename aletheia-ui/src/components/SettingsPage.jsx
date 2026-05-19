@@ -246,13 +246,36 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
   const [odForm, setOdForm]             = useState({ client_id: "", client_secret: "", tenant_id: "consumers" });
   const [folderInput, setFolderInput]   = useState("");
   const [activeSection, setActiveSection] = useState("profile");
+  const [systemForm, setSystemForm]     = useState({ use_v3_modes: false });
+  const [calStatus, setCalStatus]       = useState(null);
+  const [calAuthing, setCalAuthing]     = useState(false);
+  const [tgStatus, setTgStatus]         = useState(null);
+  const [tgForm, setTgForm]             = useState({ token: "", allowed_user_ids: "", admin_user_id: "" });
+  const [tgSaving, setTgSaving]         = useState(false);
   const gdriveRef = useRef(null);
   const gmailRef  = useRef(null);
 
   const [gmailAvailable, setGmailAvailable] = useState(false);
 
   useEffect(() => {
+    const handler = (e) => setActiveSection(e.detail);
+    window.addEventListener("aletheia:settings-section", handler);
+    return () => window.removeEventListener("aletheia:settings-section", handler);
+  }, []);
+
+  useEffect(() => {
     fetch(`${apiUrl}/api/gmail/status`).then(r => r.json()).then(d => setGmailAvailable(d.available && d.libs_ok)).catch(() => {});
+    fetch(`${apiUrl}/api/calendar/status`).then(r => r.json()).then(setCalStatus).catch(() => {});
+    fetch(`${apiUrl}/api/settings/telegram/status`).then(r => r.json()).then(d => {
+      setTgStatus(d);
+      if (d.configured) {
+        setTgForm(f => ({
+          ...f,
+          allowed_user_ids: (d.allowed_user_ids || []).join(", "),
+          admin_user_id: d.admin_user_id ?? "",
+        }));
+      }
+    }).catch(() => {});
     fetch(`${apiUrl}/api/settings`)
       .then(r => r.json())
       .then(d => {
@@ -263,6 +286,7 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
           api_key: "",
         });
         setVoiceForm(v => ({ ...v, ...d.voice }));
+        if (d.system) setSystemForm(d.system);
       })
       .catch(() => {});
   }, [apiUrl]);
@@ -295,6 +319,67 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
     });
     setSettings(s => ({ ...s, llm: { provider: llmForm.provider, model: llmForm.model, has_api_key: !!llmForm.api_key } }));
     flash("LLM guardado.");
+  };
+
+  const authorizeCalendar = async () => {
+    setCalAuthing(true);
+    try {
+      const r = await fetch(`${apiUrl}/api/calendar/auth`, { method: "POST" });
+      const d = await r.json();
+      if (d.ok) {
+        flash("Google Calendar autorizado correctamente.");
+        fetch(`${apiUrl}/api/calendar/status`).then(r => r.json()).then(setCalStatus).catch(() => {});
+      } else {
+        flash(`Error: ${d.error}`);
+      }
+    } catch (e) {
+      flash(`Error de conexión: ${e.message}`);
+    } finally {
+      setCalAuthing(false);
+    }
+  };
+
+  const saveTelegram = async () => {
+    setTgSaving(true);
+    try {
+      const ids = tgForm.allowed_user_ids.split(",").map(s => s.trim()).filter(Boolean);
+      const r = await fetch(`${apiUrl}/api/settings/telegram`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: tgForm.token,
+          allowed_user_ids: ids,
+          admin_user_id: tgForm.admin_user_id || null,
+        }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        flash("Configuración de Telegram guardada.");
+        fetch(`${apiUrl}/api/settings/telegram/status`).then(r => r.json()).then(setTgStatus).catch(() => {});
+      } else {
+        flash(`Error: ${d.error}`);
+      }
+    } finally {
+      setTgSaving(false);
+    }
+  };
+
+  const deleteTelegram = async () => {
+    await fetch(`${apiUrl}/api/settings/telegram`, { method: "DELETE" });
+    setTgStatus({ configured: false });
+    setTgForm({ token: "", allowed_user_ids: "", admin_user_id: "" });
+    flash("Configuración de Telegram eliminada.");
+  };
+
+  const saveSystem = async () => {
+    const r = await fetch(`${apiUrl}/api/settings/preferences`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ section: "system", updates: systemForm }),
+    });
+    const d = await r.json();
+    if (d.system) setSystemForm(d.system);
+    flash("Configuración del sistema guardada.");
   };
 
   const saveVoice = async () => {
@@ -360,13 +445,16 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
   };
 
   const NAV = [
-    { id: "profile", label: "Perfil" },
-    { id: "llm",     label: "LLM" },
-    { id: "gmail",   label: "Gmail" },
-    { id: "gdrive",  label: "Google Drive" },
-    { id: "onedrive",label: "OneDrive" },
-    { id: "folders", label: "Carpetas locales" },
-    { id: "voice",   label: "Voz" },
+    { id: "profile",  label: "Perfil" },
+    { id: "llm",      label: "LLM" },
+    { id: "gmail",    label: "Gmail" },
+    { id: "gdrive",   label: "Google Drive" },
+    { id: "calendar", label: "Calendario" },
+    { id: "onedrive", label: "OneDrive" },
+    { id: "folders",  label: "Carpetas locales" },
+    { id: "voice",    label: "Voz" },
+    { id: "telegram", label: "Telegram" },
+    { id: "system",   label: "Sistema" },
   ];
 
   const navBtn = (id, label) => (
@@ -707,6 +795,195 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
               </select>
 
               <button style={BTN_PRIMARY} onClick={saveVoice}>Guardar preferencias de voz</button>
+            </div>
+          )}
+
+          {/* ── CALENDARIO ── */}
+          {activeSection === "calendar" && (
+            <div style={SECTION}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", margin: 0 }}>Google Calendar</h2>
+                <Badge
+                  ok={calStatus?.authorized}
+                  trueLabel="Autorizado"
+                  falseLabel={calStatus?.has_credentials ? "Pendiente autorizar" : "Sin credenciales"}
+                />
+              </div>
+
+              {/* Reutiliza credenciales de Drive */}
+              {calStatus?.using_drive_creds && (
+                <div style={{ fontSize: 12, color: "#818cf8", padding: "8px 12px", borderRadius: 8, background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", marginBottom: 14 }}>
+                  Usando las credenciales de Google Drive. Solo necesitas autorizar Calendar.
+                </div>
+              )}
+
+              {!calStatus?.has_credentials && (
+                <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 16 }}>
+                  <p style={{ marginBottom: 8 }}>Primero configura Google Drive (sube <code style={{ color: "#818cf8" }}>credentials.json</code>) o sube un fichero específico para Calendar.</p>
+                  <ol style={{ color: "#9ca3af", lineHeight: 1.8 }}>
+                    <li>Abre <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" style={{ color: "#818cf8" }}>console.cloud.google.com</a></li>
+                    <li>Habilita la <strong style={{ color: "#f9fafb" }}>Google Calendar API</strong> en tu proyecto</li>
+                    <li>Configura Google Drive aquí arriba (mismas credenciales)</li>
+                  </ol>
+                </div>
+              )}
+
+              {calStatus?.has_credentials && !calStatus?.authorized && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 12 }}>
+                    Las credenciales están listas. Pulsa el botón para abrir el navegador y autorizar el acceso a tu calendario (solo lectura y escritura en tu cuenta).
+                  </p>
+                  <button
+                    style={{ ...BTN_PRIMARY, opacity: calAuthing ? 0.6 : 1 }}
+                    onClick={authorizeCalendar}
+                    disabled={calAuthing}
+                  >
+                    {calAuthing ? "Abriendo navegador…" : "Autorizar Google Calendar"}
+                  </button>
+                </div>
+              )}
+
+              {calStatus?.authorized && (
+                <div>
+                  <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 16 }}>
+                    Aletheia puede leer y crear eventos en tu calendario. Puedes preguntar cosas como "¿Qué tengo hoy?" o "Crea una reunión el lunes a las 10h".
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      style={{ ...BTN_GHOST }}
+                      onClick={authorizeCalendar}
+                      disabled={calAuthing}
+                    >
+                      {calAuthing ? "Reautorizando…" : "Reautorizar"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TELEGRAM ── */}
+          {activeSection === "telegram" && (
+            <div style={SECTION}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", margin: 0 }}>Bot de Telegram</h2>
+                <Badge ok={tgStatus?.configured} trueLabel="Configurado" falseLabel="Sin configurar" />
+              </div>
+
+              <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 16 }}>
+                Permite chatear con Aletheia desde tu móvil y recibir notificaciones proactivas de HESTIA.
+              </p>
+
+              {/* Setup steps */}
+              {!tgStatus?.configured && (
+                <div style={{ background: "#060610", borderRadius: 10, padding: "1rem", border: "1px solid #374151", marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em" }}>Paso 1 — Crear el bot</div>
+                  <ol style={{ color: "#9ca3af", fontSize: 13, lineHeight: 2, margin: 0, paddingLeft: 18 }}>
+                    <li>Abre Telegram y busca <strong style={{ color: "#f9fafb" }}>@BotFather</strong></li>
+                    <li>Envía <code style={{ color: "#818cf8" }}>/newbot</code> y sigue las instrucciones</li>
+                    <li>Copia el token que te dé (formato: <code style={{ color: "#818cf8" }}>1234567890:ABC…</code>)</li>
+                  </ol>
+                </div>
+              )}
+
+              {/* Token input */}
+              <label style={LABEL}>Token del bot</label>
+              <input
+                type="password"
+                value={tgForm.token}
+                onChange={e => setTgForm(f => ({ ...f, token: e.target.value }))}
+                placeholder="1234567890:ABCdefGHI..."
+                style={{ ...INPUT, marginBottom: 14 }}
+                autoComplete="off"
+              />
+
+              <label style={LABEL}>Tu ID de usuario (para notificaciones proactivas)</label>
+              <input
+                type="text"
+                value={tgForm.admin_user_id}
+                onChange={e => setTgForm(f => ({ ...f, admin_user_id: e.target.value }))}
+                placeholder="123456789"
+                style={{ ...INPUT, marginBottom: 4 }}
+              />
+              <div style={{ fontSize: 11, color: "#4b5563", marginBottom: 14 }}>
+                Envía <code style={{ color: "#818cf8" }}>/myid</code> a tu bot para obtener tu ID.
+              </div>
+
+              <label style={LABEL}>IDs permitidos (separados por comas — vacío = cualquiera)</label>
+              <input
+                type="text"
+                value={tgForm.allowed_user_ids}
+                onChange={e => setTgForm(f => ({ ...f, allowed_user_ids: e.target.value }))}
+                placeholder="123456789, 987654321"
+                style={{ ...INPUT, marginBottom: 16 }}
+              />
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={{ ...BTN_PRIMARY, opacity: tgSaving ? 0.6 : 1 }} onClick={saveTelegram} disabled={tgSaving}>
+                  {tgSaving ? "Guardando…" : "Guardar configuración"}
+                </button>
+                {tgStatus?.configured && (
+                  <button style={BTN_GHOST} onClick={deleteTelegram}>Eliminar</button>
+                )}
+              </div>
+
+              {tgStatus?.configured && (
+                <div style={{ marginTop: 16, fontSize: 12, color: "#6b7280", padding: "10px 14px", borderRadius: 8, background: "#060610", border: "1px solid #374151" }}>
+                  <div style={{ marginBottom: 4 }}>Para arrancar el bot:</div>
+                  <code style={{ color: "#818cf8" }}>python start.py --telegram</code>
+                  {tgStatus.admin_user_id && (
+                    <div style={{ marginTop: 6 }}>Notificaciones → ID: <strong style={{ color: "#f9fafb" }}>{tgStatus.admin_user_id}</strong></div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── SISTEMA ── */}
+          {activeSection === "system" && (
+            <div style={SECTION}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: "#f9fafb" }}>Sistema</h2>
+              <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 20 }}>
+                Opciones avanzadas del motor cognitivo de Aletheia.
+              </p>
+
+              {/* v3 modes toggle */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "#060610", borderRadius: 10, border: "1px solid #374151", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#f9fafb", marginBottom: 2 }}>
+                    Modos cognitivos 3.0
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    Activa el motor de 11 modos (OBSERVER, ANALYTICAL, STRATEGIC…). Si está desactivado usa el pipeline v1.
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSystemForm(f => ({ ...f, use_v3_modes: !f.use_v3_modes }))}
+                  style={{
+                    width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+                    background: systemForm.use_v3_modes ? "rgba(99,102,241,0.8)" : "#374151",
+                    position: "relative", flexShrink: 0, transition: "background 0.2s",
+                  }}
+                  title={systemForm.use_v3_modes ? "Desactivar modos 3.0" : "Activar modos 3.0"}
+                >
+                  <span style={{
+                    display: "block", width: 20, height: 20, borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: 3,
+                    left: systemForm.use_v3_modes ? 25 : 3,
+                    transition: "left 0.2s",
+                  }} />
+                </button>
+              </div>
+
+              {systemForm.use_v3_modes && (
+                <div style={{ fontSize: 12, color: "#818cf8", padding: "8px 12px", borderRadius: 8, background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", marginBottom: 12 }}>
+                  Motor 3.0 activo — OBSERVER enrutará cada mensaje al modo cognitivo más adecuado.
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button style={BTN_PRIMARY} onClick={saveSystem}>Guardar configuración del sistema</button>
+              </div>
             </div>
           )}
 

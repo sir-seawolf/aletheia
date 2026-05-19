@@ -69,10 +69,9 @@
 
 ## Backlog / próximos pasos
 
-- **Toggle v3 modes en UI** — exponer `use_v3_modes` en Settings o ThinkingPanel
-- **Google Calendar** — completar OAuth en browser
-- **Telegram** — token en `PALACE/config/telegram.json`
-- **ACO v3 MetaCortex** — implementar meta_cortex.py (actualmente vacío)
+- **Google Calendar OAuth** — botón "Autorizar" en Settings → Calendario ya implementado; el usuario debe pulsar cuando tenga los credentials de Drive subidos
+- **Telegram arranque** — configuración lista en Settings → Telegram; arrancar con `python start.py --telegram`
+- **MemoryBus en todos los modos** — modos 3.0 ya limpios; violaciones restantes son en pipeline v1 (legacy intencional)
 
 ## What works (actualizado 2026-05-17 — sesión 2)
 
@@ -90,8 +89,18 @@
 - **RAG** — 25/25 artifacts indexados, 450 chunks ChromaDB; búsqueda semántica operativa
 - **start.py** — UnicodeEncodeError corregido en Windows; `--status` funciona sin crash
 
+## What works (actualizado 2026-05-18)
+
+- **`semantic_graph.find_concepts()`** — función añadida; `MemoryBus.search()` ahora resuelve el import correctamente; búsqueda semántica por dominio operativa
+- **Toggle `use_v3_modes`** — persiste en `PALACE/config/preferences.json` (sección `system`); `/api/chat` lo lee de prefs si no viene en el body; SettingsPage.jsx sección "Sistema" con toggle visual
+- **ACO v3 MetaCortex** — `core/aco/v3/meta_cortex.py` implementado; EMA policy_stats en sesión; integrado en ObserverMode como Prioridad 0/1 (antes de TraceLearner); runtime.py feedbackea `meta_cortex.learn()` tras cada respuesta v3; visible en `/api/learning/insights`
+- **Google Calendar + Telegram en UI** — Settings → "Calendario" y "Telegram"; backend: `/api/calendar/status`, `/api/calendar/auth`, `/api/settings/telegram` (GET/POST/DELETE); sin edición manual de JSON
+- **Sueño cognitivo (Consolidation Engine)** — `core/memory/raw_buffer.py` + `core/memory/consolidation_engine.py`; 4 endpoints `/api/consolidation/*`; sección "Sueño cognitivo" en CognitiveDashboard; **Modo diferido** — toggle UI + `preferences.system.deferred_mode`; `MemoryBus.store()` encola en raw_buffer cuando deferred_mode=True; flujo completo: conversación → buffer → consolidación nocturna → grafo semántico + insights
+- **UseCasesPage** — vista "◇ Capacidades": 9 casos de uso con velocidad (⚡/◑/⧗), disponibilidad cruzada con `/api/setup/status`, ejemplos clicables que lanzan el chat, filtro por categoría, leyenda; evento `aletheia:prefill` en ChatView
+- **SetupDashboard / Onboarding** — vista "Inicio" con estado de los 8 sistemas (Ollama, LLM cloud, Calendar, Gmail, Drive, Telegram, RAG, Voz); barra de progreso; botón "Configurar →" navega a la sección correcta de Settings; Sidebar muestra badge rojo con sistemas pendientes; `GET /api/setup/status` agrega todos los checks
+- **FatigueEngine en voz** — `session.py` genera `session_id` único por sesión de voz (`voice_<hex8>`); todos los helpers (`_respond_fast`, `_respond_conversational`, `_respond_kronos`, `_respond_pipeline`) propagan el session_id al contexto del router; `kronos.quick_analysis()` acepta `session_id`; indicador de fatiga en consola cuando supera 60%/80%
+
 ## Known issues
 
 - guardian_block=False no verificado con Ollama real en todas las rutas
-- MemoryBus.search() depende de `semantic_graph.find_concepts()` — verificar que existe esa función
 - Sprint 4+5 (memoria profunda, proactividad): integración con voz pendiente end-to-end

@@ -29,9 +29,9 @@ const C = {
 
 /* ── Primitives ──────────────────────────────────────────────────────────── */
 
-function Card({ title, children, action }) {
+function Card({ title, children, action, style: extraStyle }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px" }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", ...extraStyle }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: C.text, textTransform: "uppercase", letterSpacing: "0.07em" }}>{title}</span>
         {action}
@@ -443,6 +443,456 @@ function SystemHealthSection({ apiUrl }) {
   );
 }
 
+/* ── Cognitive Patterns Sub-section ─────────────────────────────────────── */
+
+function PatternsSubSection({ apiUrl }) {
+  const [patterns, setPatterns]   = useState([]);
+  const [detecting, setDetecting] = useState(false);
+  const [loaded, setLoaded]       = useState(false);
+
+  const load = useCallback(() => {
+    fetch(`${apiUrl}/api/consolidation/patterns?limit=15`)
+      .then(r => r.json())
+      .then(d => { setPatterns(Array.isArray(d) ? d : []); setLoaded(true); })
+      .catch(() => { setLoaded(true); });
+  }, [apiUrl]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const markAllRead = async () => {
+    await fetch(`${apiUrl}/api/consolidation/patterns/mark_all_read`, { method: "POST" });
+    load();
+  };
+
+  const markRead = async (id) => {
+    await fetch(`${apiUrl}/api/consolidation/patterns/${id}/mark_read`, { method: "POST" });
+    setPatterns(ps => ps.map(p => p.id === id ? { ...p, shown: true } : p));
+  };
+
+  const detectNow = async () => {
+    setDetecting(true);
+    try {
+      await fetch(`${apiUrl}/api/consolidation/patterns/detect?since_hours=48`, { method: "POST" });
+      load();
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const unread = patterns.filter(p => !p.shown).length;
+
+  const RELEVANCE_COLOR = (r) =>
+    r >= 0.7 ? C.green : r >= 0.4 ? C.yellow : C.muted;
+
+  const TYPE_LABEL = {
+    recurring_topic:      "Tema recurrente",
+    dominant_mode:        "Modo dominante",
+    new_concept:          "Concepto nuevo",
+    cross_domain_link:    "Conexión cruzada",
+    high_fatigue_session: "Alta carga",
+    low_confidence_zone:  "Zona de duda",
+  };
+
+  return (
+    <div style={{ marginTop: 20, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>
+            Insights del último sueño
+          </span>
+          {unread > 0 && (
+            <span style={{
+              minWidth: 18, height: 18, borderRadius: 9, padding: "0 5px",
+              background: C.accent, color: "#fff",
+              fontSize: 10, fontWeight: 700, lineHeight: "18px", textAlign: "center",
+            }}>
+              {unread}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={detectNow}
+            disabled={detecting}
+            style={{
+              padding: "4px 11px", borderRadius: 7, fontSize: 11, cursor: "pointer",
+              background: "transparent", border: `1px solid ${C.dim}`, color: C.muted,
+              opacity: detecting ? 0.6 : 1,
+            }}
+          >
+            {detecting ? "Detectando…" : "Detectar ahora"}
+          </button>
+          {unread > 0 && (
+            <button
+              onClick={markAllRead}
+              style={{
+                padding: "4px 11px", borderRadius: 7, fontSize: 11, cursor: "pointer",
+                background: "transparent", border: `1px solid ${C.dim}`, color: C.muted,
+              }}
+            >
+              Marcar todo leído
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Pattern list */}
+      {!loaded ? (
+        <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>Cargando patrones…</div>
+      ) : patterns.length === 0 ? (
+        <div style={{ fontSize: 12, color: C.dim, fontStyle: "italic" }}>
+          Sin patrones detectados. Ejecuta una consolidación para analizar las conversaciones recientes.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {patterns.map(p => (
+            <div
+              key={p.id}
+              onClick={() => !p.shown && markRead(p.id)}
+              style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: "10px 12px", borderRadius: 9,
+                background: p.shown ? "#060610" : "rgba(99,102,241,0.06)",
+                border: `1px solid ${p.shown ? C.border : "rgba(99,102,241,0.2)"}`,
+                cursor: p.shown ? "default" : "pointer",
+                transition: "background 0.15s",
+                opacity: p.shown ? 0.65 : 1,
+              }}
+            >
+              <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>{p.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{p.title}</span>
+                  {!p.shown && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4,
+                      background: C.accent, color: "#fff", textTransform: "uppercase",
+                    }}>
+                      nuevo
+                    </span>
+                  )}
+                  <span style={{
+                    fontSize: 10, padding: "1px 6px", borderRadius: 4, marginLeft: "auto",
+                    background: "rgba(107,114,128,0.1)", color: C.muted,
+                  }}>
+                    {TYPE_LABEL[p.type] || p.type}
+                  </span>
+                </div>
+                <p style={{ fontSize: 12, color: C.muted, margin: 0, lineHeight: 1.5 }}>
+                  {p.description}
+                </p>
+                {/* Relevance bar */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+                  <div style={{ flex: 1, height: 3, background: C.dim, borderRadius: 2 }}>
+                    <div style={{
+                      width: `${Math.round(p.relevance * 100)}%`, height: "100%",
+                      background: RELEVANCE_COLOR(p.relevance), borderRadius: 2,
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: C.muted, minWidth: 30 }}>
+                    {Math.round(p.relevance * 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ── Sleep / Consolidation Section ─────────────────────────────────────── */
+
+function SleepSection({ apiUrl }) {
+  const [data, setData]           = useState(null);
+  const [running, setRunning]     = useState(false);
+  const [schedHour, setSchedH]    = useState(2);
+  const [schedMin, setSchedM]     = useState(0);
+  const [schedOn, setSchedOn]     = useState(false);
+  const [deferred, setDeferred]   = useState(false);
+  const [savingDef, setSavingDef] = useState(false);
+
+  const refresh = useCallback(() => {
+    fetch(`${apiUrl}/api/consolidation/status`)
+      .then(r => r.json())
+      .then(d => {
+        setData(d);
+        if (d.schedule) {
+          setSchedH(d.schedule.hour ?? 2);
+          setSchedM(d.schedule.minute ?? 0);
+          setSchedOn(d.schedule.enabled ?? false);
+        }
+      })
+      .catch(() => {});
+    fetch(`${apiUrl}/api/settings`)
+      .then(r => r.json())
+      .then(d => { if (d.system) setDeferred(!!d.system.deferred_mode); })
+      .catch(() => {});
+  }, [apiUrl]);
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 5000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  const triggerRun = async (mode) => {
+    setRunning(true);
+    try {
+      await fetch(`${apiUrl}/api/consolidation/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      setTimeout(refresh, 800);
+    } finally {
+      if (mode === "background") setRunning(false);
+      else setTimeout(() => { setRunning(false); refresh(); }, 1000);
+    }
+  };
+
+  const triggerStop = async () => {
+    await fetch(`${apiUrl}/api/consolidation/stop`, { method: "POST" });
+    setTimeout(refresh, 600);
+  };
+
+  const saveSchedule = async () => {
+    await fetch(`${apiUrl}/api/consolidation/schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hour: schedHour, minute: schedMin, enabled: schedOn }),
+    });
+    refresh();
+  };
+
+  const toggleDeferred = async (val) => {
+    setDeferred(val);
+    setSavingDef(true);
+    try {
+      await fetch(`${apiUrl}/api/settings/preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: "system", updates: { deferred_mode: val } }),
+      });
+    } finally {
+      setSavingDef(false);
+    }
+  };
+
+  const state     = data?.state || "idle";
+  const isRunning = state === "running";
+  const pending   = data?.queue?.pending ?? 0;
+  const progress  = data?.progress || {};
+  const lastRes   = data?.last_result || {};
+  const lastRun   = data?.last_run;
+
+  const stateColor  = isRunning ? C.yellow : state === "scheduled" ? C.accent : C.muted;
+  const stateLabel  = isRunning ? "Consolidando…" : state === "scheduled" ? "Programado" : "En reposo";
+
+  return (
+    <Card title="Sueño cognitivo" style={{ gridColumn: "1 / -1" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+        {/* Left — state + controls */}
+        <div>
+          {/* State indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <span style={{
+              width: 10, height: 10, borderRadius: "50%",
+              background: stateColor,
+              boxShadow: isRunning ? `0 0 8px ${stateColor}` : "none",
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{stateLabel}</span>
+            {pending > 0 && (
+              <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", color: C.yellow }}>
+                {pending} en cola
+              </span>
+            )}
+          </div>
+
+          {/* Progress step */}
+          {isRunning && progress.step && (
+            <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "rgba(251,191,36,0.05)", border: `1px solid rgba(251,191,36,0.15)`, fontSize: 12, color: C.yellow }}>
+              {progress.step}
+            </div>
+          )}
+
+          {/* Last run stats */}
+          {lastRun && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: C.muted }}>
+              Última consolidación: <span style={{ color: C.text }}>{lastRun?.slice(0, 16).replace("T", " ")}</span>
+              {lastRes.nodes != null && (
+                <div style={{ marginTop: 4, display: "flex", gap: 12 }}>
+                  <span>📦 {lastRes.nodes} nodos</span>
+                  <span>💡 {lastRes.insights} insights</span>
+                  <span>⏱ {lastRes.elapsed_s}s</span>
+                  {lastRes.buffer_items > 0 && <span>📥 {lastRes.buffer_items} de cola</span>}
+                </div>
+              )}
+              {lastRes.errors?.length > 0 && (
+                <div style={{ marginTop: 4, color: C.red, fontSize: 11 }}>{lastRes.errors.length} advertencia(s)</div>
+              )}
+            </div>
+          )}
+
+          {/* Control buttons */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {!isRunning ? (
+              <>
+                <button
+                  onClick={() => triggerRun("background")}
+                  disabled={running}
+                  style={{
+                    padding: "7px 16px", borderRadius: 8, border: "none",
+                    background: "linear-gradient(135deg,#4f46e5,#7c3aed)",
+                    color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    opacity: running ? 0.6 : 1,
+                  }}
+                >
+                  {running ? "Iniciando…" : "Consolidar ahora"}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={triggerStop}
+                style={{
+                  padding: "7px 16px", borderRadius: 8,
+                  background: "transparent", border: `1px solid ${C.red}`,
+                  color: C.red, fontSize: 13, cursor: "pointer",
+                }}
+              >
+                Detener
+              </button>
+            )}
+          </div>
+
+          {/* Deferred mode toggle */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            marginTop: 14, padding: "10px 12px",
+            background: deferred ? "rgba(99,102,241,0.06)" : "#060610",
+            borderRadius: 8,
+            border: `1px solid ${deferred ? "rgba(99,102,241,0.25)" : C.border}`,
+            transition: "background 0.2s, border-color 0.2s",
+          }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+                Modo diferido {savingDef && <span style={{ fontSize: 10, color: C.muted }}>guardando…</span>}
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                {deferred
+                  ? "Activo — conversaciones encolan en buffer para procesar durante el sueño"
+                  : "Inactivo — comportamiento estándar (sin buffer adicional)"}
+              </div>
+            </div>
+            <button
+              onClick={() => toggleDeferred(!deferred)}
+              style={{
+                width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+                background: deferred ? "rgba(99,102,241,0.8)" : C.dim,
+                position: "relative", flexShrink: 0, transition: "background 0.2s",
+              }}
+            >
+              <span style={{
+                display: "block", width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                position: "absolute", top: 3,
+                left: deferred ? 23 : 3, transition: "left 0.2s",
+              }} />
+            </button>
+          </div>
+
+          {/* Explanation */}
+          <p style={{ fontSize: 11, color: C.muted, marginTop: 10, lineHeight: 1.5 }}>
+            Durante conversaciones Aletheia responde rápido sin procesar en profundidad.
+            La consolidación mueve datos al grafo semántico, recomputa insights y comprime el contexto.
+          </p>
+        </div>
+
+        {/* Right — schedule */}
+        <div>
+          <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+            Programación automática (sueño)
+          </div>
+
+          {/* Enable toggle */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: "#060610", borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, color: C.text }}>Consolidación automática</span>
+            <button
+              onClick={() => setSchedOn(v => !v)}
+              style={{
+                width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer",
+                background: schedOn ? "rgba(99,102,241,0.8)" : C.dim,
+                position: "relative", transition: "background 0.2s",
+              }}
+            >
+              <span style={{
+                display: "block", width: 16, height: 16, borderRadius: "50%", background: "#fff",
+                position: "absolute", top: 3,
+                left: schedOn ? 21 : 3, transition: "left 0.2s",
+              }} />
+            </button>
+          </div>
+
+          {/* Time picker */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, opacity: schedOn ? 1 : 0.4 }}>
+            <div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Hora</div>
+              <select
+                value={schedHour}
+                onChange={e => setSchedH(Number(e.target.value))}
+                disabled={!schedOn}
+                style={{ background: "#060610", border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, padding: "5px 8px", fontSize: 13, cursor: schedOn ? "pointer" : "not-allowed" }}
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <option key={i} value={i}>{String(i).padStart(2, "0")}h</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Min</div>
+              <select
+                value={schedMin}
+                onChange={e => setSchedM(Number(e.target.value))}
+                disabled={!schedOn}
+                style={{ background: "#060610", border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, padding: "5px 8px", fontSize: 13, cursor: schedOn ? "pointer" : "not-allowed" }}
+              >
+                {[0, 15, 30, 45].map(m => (
+                  <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <button
+                onClick={saveSchedule}
+                style={{
+                  padding: "6px 14px", borderRadius: 8,
+                  background: "transparent", border: `1px solid ${C.dim}`,
+                  color: C.muted, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+
+          {schedOn && (
+            <div style={{ fontSize: 12, color: C.accent, padding: "7px 10px", borderRadius: 8, background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)" }}>
+              Consolidación programada cada día a las {String(schedHour).padStart(2, "0")}:{String(schedMin).padStart(2, "0")} h
+            </div>
+          )}
+        </div>
+      </div>
+
+      <PatternsSubSection apiUrl={apiUrl} />
+    </Card>
+  );
+}
+
+
 /* ── Main Component ─────────────────────────────────────────────────────── */
 
 export default function CognitiveDashboard({ apiUrl = "http://localhost:8000", domain = "general", sessionId }) {
@@ -459,10 +909,11 @@ export default function CognitiveDashboard({ apiUrl = "http://localhost:8000", d
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <CognitiveStateSection  apiUrl={apiUrl} domain={domain} sessionId={sessionId} />
-        <SystemHealthSection    apiUrl={apiUrl} />
+        <CognitiveStateSection   apiUrl={apiUrl} domain={domain} sessionId={sessionId} />
+        <SystemHealthSection     apiUrl={apiUrl} />
         <ModeIntelligenceSection apiUrl={apiUrl} domain={domain} />
-        <RecentTracesSection    apiUrl={apiUrl} domain={domain} />
+        <RecentTracesSection     apiUrl={apiUrl} domain={domain} />
+        <SleepSection            apiUrl={apiUrl} />
       </div>
     </div>
   );

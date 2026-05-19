@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from agents.guardian import validate
+from core.pipeline.guardian import validate
 from core.context import Context
 from core.risk_engine import get_risk_config
 

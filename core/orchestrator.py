@@ -2,13 +2,13 @@
 Main orchestrator for Aletheia cognitive pipeline.
 
 STATUS: IMPLEMENTED (production v1.1)
-Dependencies: agents.*, core.aco.*, core.cel, core.llm.router, memory.service, core.palace, core.metrics.*
+Dependencies: core.pipeline.*, core.aco.*, core.cel, core.llm.router, memory.service, core.palace, core.metrics.*
 Last stable version: v1.2
 
 Pipeline: Profile extraction → Context → ACO middleware → CEL → Explorer → Simulator → Guardian → Palace attach → Contract
 """
 
-from agents import explorer, simulator, guardian
+from core.pipeline import explorer, simulator, guardian
 from core.palace import attach_to_palace
 from core.aco.middleware import apply_aco
 from core.aco.engine import CognitiveOptimizer

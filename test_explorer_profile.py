@@ -1,7 +1,7 @@
 """Test rápido: Explorer con perfiles cognitivos A y B."""
 
 from types import SimpleNamespace
-from agents.explorer import _extract_relevant_facts, _detect_gaps, _calculate_confidence
+from core.pipeline.explorer import _extract_relevant_facts, _detect_gaps, _calculate_confidence
 
 # Memoria de prueba con 12 items que coinciden con dominio/pregunta
 MEMORY = [f"memory item {i} test domain" for i in range(12)]

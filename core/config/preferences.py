@@ -43,6 +43,11 @@ _DEFAULTS: dict[str, Any] = {
     "ui": {
         "theme": "dark",
     },
+    "system": {
+        "use_v3_modes":    False,
+        "deferred_mode":   False,   # when True, MemoryBus.store() also enqueues to raw_buffer
+        "consolidation_schedule": None,
+    },
 }
 
 
@@ -143,6 +148,7 @@ def status() -> dict[str, Any]:
         },
         "voice": prefs.get("voice", {}),
         "ui": prefs.get("ui", {}),
+        "system": prefs.get("system", {"use_v3_modes": False, "deferred_mode": False}),
         "credentials": {
             "gdrive": gdrive_ok(),
             "onedrive": onedrive_ok(),

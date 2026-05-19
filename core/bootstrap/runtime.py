@@ -1019,6 +1019,7 @@ async def update_preferences(body: Dict):
         },
         "voice": prefs.get("voice", {}),
         "ui": prefs.get("ui", {}),
+        "system": prefs.get("system", {"use_v3_modes": False}),
     }
 
 
@@ -1067,6 +1068,57 @@ async def delete_credentials(service: str):
             p.unlink()
             removed.append(fname)
     return {"ok": True, "removed": removed}
+
+
+# ── Telegram settings ────────────────────────────────────────────────────
+
+_TG_CONFIG = Path(__file__).parent.parent.parent / "PALACE" / "config" / "telegram.json"
+
+@app.get("/api/settings/telegram/status")
+async def telegram_status():
+    """Return Telegram bot configuration status."""
+    if not _TG_CONFIG.exists():
+        return {"configured": False, "has_token": False, "allowed_user_ids": [], "admin_user_id": None}
+    try:
+        import json as _json
+        cfg = _json.loads(_TG_CONFIG.read_text(encoding="utf-8"))
+        token = cfg.get("token", "")
+        return {
+            "configured":      bool(token and token != "YOUR_TOKEN_HERE"),
+            "has_token":       bool(token),
+            "allowed_user_ids": cfg.get("allowed_user_ids", []),
+            "admin_user_id":   cfg.get("admin_user_id"),
+        }
+    except Exception as exc:
+        return {"configured": False, "error": str(exc)}
+
+
+@app.post("/api/settings/telegram")
+async def save_telegram_config(body: Dict):
+    """
+    Save Telegram bot configuration.
+    Body: { "token": "...", "allowed_user_ids": [123, 456], "admin_user_id": 123 }
+    """
+    import json as _json
+    token = (body.get("token") or "").strip()
+    if not token:
+        return {"ok": False, "error": "El token no puede estar vacío."}
+    cfg = {
+        "token":            token,
+        "allowed_user_ids": [int(x) for x in body.get("allowed_user_ids", []) if str(x).strip().isdigit()],
+        "admin_user_id":    int(body["admin_user_id"]) if body.get("admin_user_id") and str(body["admin_user_id"]).strip().isdigit() else None,
+    }
+    _TG_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    _TG_CONFIG.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "configured": True}
+
+
+@app.delete("/api/settings/telegram")
+async def delete_telegram_config():
+    """Remove Telegram bot configuration."""
+    if _TG_CONFIG.exists():
+        _TG_CONFIG.unlink()
+    return {"ok": True}
 
 
 # ── System status (for StatusBar) ─────────────────────────────────────────
@@ -1263,7 +1315,14 @@ async def chat_endpoint(body: Dict):
         }
 
     # 2. Aletheia 3.0 cognitive routing — full ModeRegistry pipeline
-    if body.get("use_v3_modes", False):
+    _use_v3 = body.get("use_v3_modes")
+    if _use_v3 is None:
+        try:
+            from core.config.preferences import load as _load_prefs
+            _use_v3 = _load_prefs().get("system", {}).get("use_v3_modes", False)
+        except Exception:
+            _use_v3 = False
+    if _use_v3:
         try:
             import asyncio, functools
             from core.modes.registry import mode_registry
@@ -1288,6 +1347,11 @@ async def chat_endpoint(body: Dict):
             reply = _extract_reply(mode_result)
             session.add("assistant", reply)
             _commit_trace(reply, confidence=mode_result.confidence, agent=mode_result.mode_id.value)
+            try:
+                from core.aco.v3.meta_cortex import meta_cortex as _mc
+                _mc.learn(mode_result.mode_id.value, mode_result.confidence)
+            except Exception:
+                pass
             return {
                 "reply":        reply,
                 "session_id":   session_id,
@@ -1617,13 +1681,21 @@ async def learning_insights(domain: Optional[str] = Query(default=None)):
     Forces a cache refresh if data is stale (> 5 min).
     """
     from core.cognition.trace_learner import trace_learner
+    from core.aco.v3.meta_cortex import meta_cortex
     if domain:
         modes = trace_learner.insights_for(domain)
         return {
-            "domain":    domain,
-            "modes":     [i.to_dict() for i in modes],
+            "domain":        domain,
+            "modes":         [i.to_dict() for i in modes],
+            "metacortex":    meta_cortex.stats(),
         }
-    return trace_learner.all_insights()
+    result = trace_learner.all_insights()
+    result["metacortex"] = {
+        "stats":              meta_cortex.stats(),
+        "top_modes":          meta_cortex.top_modes(5),
+        "total_interactions": meta_cortex.total_interactions(),
+    }
+    return result
 
 
 @app.get("/api/learning/degradation")
@@ -1991,6 +2063,51 @@ async def calendar_search(q: str = Query(default="")):
     return result
 
 
+@app.get("/api/calendar/status")
+async def calendar_status():
+    """Return whether Calendar credentials and token are present."""
+    from core.docs.gcalendar import is_available, _CREDS_PATH, _CREDS_ALT, _TOKEN_PATH, _SCOPES
+    has_creds = _CREDS_PATH.exists() or _CREDS_ALT.exists()
+    has_token = _TOKEN_PATH.exists()
+    token_valid = False
+    if has_token:
+        try:
+            from google.oauth2.credentials import Credentials
+            creds = Credentials.from_authorized_user_file(str(_TOKEN_PATH), _SCOPES)
+            token_valid = creds.valid or bool(creds.refresh_token)
+        except Exception:
+            pass
+    using_drive_creds = not _CREDS_PATH.exists() and _CREDS_ALT.exists()
+    return {
+        "has_credentials": has_creds,
+        "has_token":        has_token,
+        "token_valid":      token_valid,
+        "authorized":       has_creds and token_valid,
+        "using_drive_creds": using_drive_creds,
+    }
+
+
+@app.post("/api/calendar/auth")
+async def calendar_auth():
+    """
+    Trigger the Google Calendar OAuth browser flow.
+    Opens the default browser on the server machine (desktop app pattern).
+    Saves the resulting token to PALACE/config/gcalendar_token.json.
+    """
+    from core.docs.gcalendar import is_available, _creds_file, _TOKEN_PATH, _SCOPES
+    if not is_available():
+        return {"ok": False, "error": "No hay credenciales de Google configuradas. Sube gdrive_credentials.json o gcalendar_credentials.json primero."}
+    try:
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        flow = InstalledAppFlow.from_client_secrets_file(str(_creds_file()), _SCOPES)
+        creds = flow.run_local_server(port=0)
+        _TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+        return {"ok": True, "message": "Google Calendar autorizado correctamente."}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 # ── Notification endpoints ────────────────────────────────────────────────
 
 @app.post("/api/notifications/register")
@@ -2025,6 +2142,221 @@ async def notifications_push(body: Dict):
     return {"queued": True}
 
 
+# ── Consolidation (cognitive sleep) ──────────────────────────────────────
+
+@app.get("/api/consolidation/status")
+async def consolidation_status():
+    """Return current state of the consolidation engine + queue stats."""
+    from core.memory.consolidation_engine import consolidation_engine
+    return consolidation_engine.status()
+
+
+@app.post("/api/consolidation/run")
+async def consolidation_run(body: Dict):
+    """
+    Trigger consolidation.
+    Body: { "mode": "now" | "background" }
+    """
+    import asyncio, functools
+    from core.memory.consolidation_engine import consolidation_engine
+    mode = body.get("mode", "background")
+    if mode == "now":
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, consolidation_engine.run_now
+        )
+        return result
+    else:
+        started = consolidation_engine.start_background()
+        return {"started": started, "message": "Consolidación iniciada en segundo plano." if started else "Ya hay una consolidación en curso."}
+
+
+@app.post("/api/consolidation/stop")
+async def consolidation_stop():
+    """Stop a running background consolidation."""
+    from core.memory.consolidation_engine import consolidation_engine
+    consolidation_engine.stop()
+    return {"stopped": True}
+
+
+@app.post("/api/consolidation/schedule")
+async def consolidation_schedule(body: Dict):
+    """
+    Set or clear the daily consolidation schedule.
+    Body: { "hour": 2, "minute": 0, "enabled": true }
+    """
+    from core.memory.consolidation_engine import consolidation_engine
+    hour    = int(body.get("hour", 2))
+    minute  = int(body.get("minute", 0))
+    enabled = bool(body.get("enabled", True))
+    consolidation_engine.set_schedule(hour, minute, enabled)
+    return {"scheduled": enabled, "hour": hour, "minute": minute}
+
+
+# ── Setup / Onboarding status ─────────────────────────────────────────────
+
+@app.get("/api/setup/status")
+async def setup_status():
+    """
+    Aggregate health check for all integrable systems.
+    Returns a list of system entries with status: 'ok' | 'partial' | 'missing'.
+    """
+    systems = []
+
+    # 1. LLM — Ollama
+    try:
+        import httpx as _hx
+        r = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: __import__("requests").get("http://localhost:11434/api/tags", timeout=2)
+        )
+        ollama_ok = r.status_code == 200
+    except Exception:
+        ollama_ok = False
+    systems.append({
+        "id": "ollama", "name": "Ollama (LLM local)", "icon": "🤖",
+        "status": "ok" if ollama_ok else "missing",
+        "detail": "Corriendo en localhost:11434" if ollama_ok else "No detectado — ejecuta: ollama serve",
+        "critical": True, "nav": "settings", "section": "llm",
+    })
+
+    # 2. LLM cloud provider
+    try:
+        from core.config.preferences import load as _lp
+        prefs = _lp()
+        provider = prefs.get("llm", {}).get("provider", "ollama")
+        has_key  = bool(prefs.get("llm", {}).get("api_key", ""))
+        cloud_ok = provider != "ollama" and has_key
+    except Exception:
+        cloud_ok = False
+        provider = "ollama"
+    systems.append({
+        "id": "llm_cloud", "name": "Proveedor cloud (Claude/OpenAI…)", "icon": "☁️",
+        "status": "ok" if cloud_ok else "missing",
+        "detail": f"{provider} configurado" if cloud_ok else "Opcional — añade una API key para respuestas más potentes",
+        "critical": False, "nav": "settings", "section": "llm",
+    })
+
+    # 3. Google Calendar
+    try:
+        from core.docs.gcalendar import is_available, _TOKEN_PATH, _SCOPES
+        cal_creds = is_available()
+        cal_token = _TOKEN_PATH.exists()
+        cal_valid  = False
+        if cal_token:
+            try:
+                from google.oauth2.credentials import Credentials
+                c = Credentials.from_authorized_user_file(str(_TOKEN_PATH), _SCOPES)
+                cal_valid = c.valid or bool(c.refresh_token)
+            except Exception:
+                pass
+        cal_status = "ok" if (cal_creds and cal_valid) else ("partial" if cal_creds else "missing")
+    except Exception:
+        cal_status = "missing"
+    systems.append({
+        "id": "calendar", "name": "Google Calendar", "icon": "📅",
+        "status": cal_status,
+        "detail": {
+            "ok":      "Conectado y autorizado",
+            "partial": "Credenciales OK — falta autorizar (pulsa el botón en Config)",
+            "missing": "Sin credenciales — configura Google Drive primero",
+        }[cal_status],
+        "critical": False, "nav": "settings", "section": "calendar",
+    })
+
+    # 4. Gmail
+    try:
+        from core.docs.gmail import is_available as gmail_avail
+        gmail_ok = gmail_avail()
+    except Exception:
+        gmail_ok = False
+    systems.append({
+        "id": "gmail", "name": "Gmail (facturas)", "icon": "📧",
+        "status": "ok" if gmail_ok else "missing",
+        "detail": "Credenciales OAuth configuradas" if gmail_ok else "Sin credenciales",
+        "critical": False, "nav": "settings", "section": "gmail",
+    })
+
+    # 5. Google Drive
+    try:
+        from core.docs.gdrive import is_available as gdrive_avail
+        gdrive_ok = gdrive_avail()
+    except Exception:
+        gdrive_ok = False
+    systems.append({
+        "id": "gdrive", "name": "Google Drive", "icon": "💾",
+        "status": "ok" if gdrive_ok else "missing",
+        "detail": "Credenciales OAuth configuradas" if gdrive_ok else "Sin credenciales",
+        "critical": False, "nav": "settings", "section": "gdrive",
+    })
+
+    # 6. Telegram
+    tg_ok = _TG_CONFIG.exists()
+    tg_token_ok = False
+    if tg_ok:
+        try:
+            import json as _j
+            _cfg = _j.loads(_TG_CONFIG.read_text(encoding="utf-8"))
+            tg_token_ok = bool(_cfg.get("token")) and _cfg.get("token") != "YOUR_TOKEN_HERE"
+        except Exception:
+            pass
+    systems.append({
+        "id": "telegram", "name": "Bot de Telegram", "icon": "✈️",
+        "status": "ok" if tg_token_ok else "missing",
+        "detail": "Token configurado — arranca con --telegram" if tg_token_ok else "Sin token de BotFather",
+        "critical": False, "nav": "settings", "section": "telegram",
+    })
+
+    # 7. RAG / Documentos
+    try:
+        from core.docs.artifact_store import ArtifactStore
+        n_docs = len(ArtifactStore().list_all())
+    except Exception:
+        n_docs = 0
+    try:
+        import chromadb as _cdb
+        _client = _cdb.PersistentClient(path="PALACE/rag")
+        _col = _client.get_or_create_collection("aletheia_docs")
+        n_chunks = _col.count()
+    except Exception:
+        n_chunks = 0
+    rag_status = "ok" if n_chunks > 0 else ("partial" if n_docs > 0 else "missing")
+    systems.append({
+        "id": "rag", "name": "RAG / Documentos", "icon": "🔍",
+        "status": rag_status,
+        "detail": f"{n_docs} documentos · {n_chunks} chunks indexados" if n_chunks > 0
+                  else (f"{n_docs} documentos sin indexar — ejecuta POST /api/rag/reindex" if n_docs > 0
+                        else "Sin documentos — sube PDFs/DOCX en Config → Carpetas"),
+        "critical": False, "nav": "docs", "section": None,
+    })
+
+    # 8. Voz offline
+    _voice_base = Path(__file__).parent.parent.parent / "PALACE" / "voice_models"
+    whisper_ok = (_voice_base / "whisper").exists() and any((_voice_base / "whisper").iterdir()) if (_voice_base / "whisper").exists() else False
+    piper_ok   = (_voice_base / "piper").exists()   and any((_voice_base / "piper").iterdir())   if (_voice_base / "piper").exists()   else False
+    voice_status = "ok" if (whisper_ok and piper_ok) else ("partial" if (whisper_ok or piper_ok) else "missing")
+    systems.append({
+        "id": "voice", "name": "Voz offline (STT + TTS)", "icon": "🎙️",
+        "status": voice_status,
+        "detail": "Whisper + Piper listos" if voice_status == "ok"
+                  else ("Whisper OK, falta Piper (TTS)" if whisper_ok else
+                        ("Piper OK, falta Whisper (STT)" if piper_ok else
+                         "Modelos no descargados — arranca con: python start.py --voice")),
+        "critical": False, "nav": None, "section": None,
+    })
+
+    connected  = sum(1 for s in systems if s["status"] == "ok")
+    partial    = sum(1 for s in systems if s["status"] == "partial")
+    total      = len(systems)
+
+    return {
+        "systems":   systems,
+        "connected": connected,
+        "partial":   partial,
+        "missing":   total - connected - partial,
+        "total":     total,
+        "score":     round(connected / total, 2),
+    }
+
+
 # ── RAG endpoints ─────────────────────────────────────────────────────────
 
 @app.post("/api/rag/search")
@@ -2050,6 +2382,149 @@ async def rag_reindex_endpoint():
     from core.docs.rag import index_all
     stats = await asyncio.get_event_loop().run_in_executor(None, index_all)
     return stats
+
+
+# ── Cognitive patterns ────────────────────────────────────────────────────
+
+@app.get("/api/consolidation/patterns")
+async def consolidation_patterns(
+    limit: int = Query(default=20),
+    unread_only: bool = Query(default=False),
+):
+    from core.cognition.pattern_detector import pattern_detector
+    return pattern_detector.get_patterns(limit=limit, unread_only=unread_only)
+
+
+@app.get("/api/consolidation/patterns/unread_count")
+async def patterns_unread_count():
+    from core.cognition.pattern_detector import pattern_detector
+    return {"count": pattern_detector.unread_count()}
+
+
+@app.post("/api/consolidation/patterns/{pattern_id}/mark_read")
+async def pattern_mark_read(pattern_id: str):
+    from core.cognition.pattern_detector import pattern_detector
+    ok = pattern_detector.mark_read(pattern_id)
+    return {"ok": ok}
+
+
+@app.post("/api/consolidation/patterns/mark_all_read")
+async def patterns_mark_all_read():
+    from core.cognition.pattern_detector import pattern_detector
+    n = pattern_detector.mark_all_read()
+    return {"marked": n}
+
+
+@app.post("/api/consolidation/patterns/detect")
+async def patterns_detect_now(since_hours: int = Query(default=48)):
+    """Trigger pattern detection manually (without full consolidation)."""
+    import asyncio
+    from core.cognition.pattern_detector import pattern_detector
+    patterns = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: pattern_detector.detect(since_hours=since_hours)
+    )
+    return {"found": len(patterns), "patterns": [p.to_dict() for p in patterns]}
+
+
+# ── Projects ───────────────────────────────────────────────────────────────
+
+@app.get("/api/projects")
+async def projects_list(
+    status: str = Query(default=""),
+    project_type: str = Query(default=""),
+):
+    from core.projects.manager import project_manager
+    return project_manager.list(
+        status=status or None,
+        project_type=project_type or None,
+    )
+
+
+@app.post("/api/projects")
+async def projects_create(body: Dict):
+    from core.projects.manager import project_manager
+    from core.projects.analyzer import compute_score, get_recommendation
+    project = project_manager.create(body)
+    score = compute_score(project)
+    rec = get_recommendation(score, project)
+    project = project_manager.update(project["id"], {"score_global": score, "recommendation": rec})
+    return project
+
+
+@app.get("/api/projects/reminders")
+async def projects_reminders():
+    from core.projects.manager import project_manager
+    return project_manager.get_reminders()
+
+
+@app.get("/api/projects/balance")
+async def projects_balance():
+    from core.projects.manager import project_manager
+    return project_manager.get_portfolio_balance()
+
+
+@app.get("/api/projects/types")
+async def projects_types():
+    from core.projects.manager import PROJECT_TYPES
+    return [{"id": k, **v} for k, v in PROJECT_TYPES.items()]
+
+
+@app.get("/api/projects/{project_id}")
+async def projects_get(project_id: str):
+    from core.projects.manager import project_manager
+    p = project_manager.get(project_id)
+    if not p:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    return p
+
+
+@app.put("/api/projects/{project_id}")
+async def projects_update(project_id: str, body: Dict):
+    from core.projects.manager import project_manager
+    from core.projects.analyzer import compute_score, get_recommendation
+    project = project_manager.update(project_id, body)
+    if not project:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    score = compute_score(project)
+    rec = get_recommendation(score, project)
+    project = project_manager.update(project_id, {"score_global": score, "recommendation": rec})
+    return project
+
+
+@app.delete("/api/projects/{project_id}")
+async def projects_discard(project_id: str):
+    from core.projects.manager import project_manager
+    ok = project_manager.discard(project_id)
+    return {"ok": ok}
+
+
+@app.post("/api/projects/{project_id}/analyze")
+async def projects_analyze(project_id: str):
+    """Trigger LLM narrative analysis for a project card."""
+    from core.projects.manager import project_manager
+    from core.projects.analyzer import analyze_with_llm, compute_score, get_recommendation
+
+    project = project_manager.get(project_id)
+    if not project:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    score = compute_score(project)
+    rec = get_recommendation(score, project)
+
+    from datetime import datetime, timezone
+    llm_result = await analyze_with_llm(project)
+
+    updates = {
+        "score_global": score,
+        "recommendation": llm_result.get("recommendation", rec),
+        "analysis_summary": llm_result.get("analysis_summary", ""),
+        "analysis_updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    updated = project_manager.update(project_id, updates)
+    return updated
 
 
 # ── Event streaming WebSocket ──────────────────────────────────────────────

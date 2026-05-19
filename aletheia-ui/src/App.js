@@ -14,6 +14,9 @@ import Sidebar          from './components/Sidebar';
 import CommandPalette      from './components/CommandPalette';
 import HelpPanel           from './components/HelpPanel';
 import CognitiveDashboard  from './components/CognitiveDashboard';
+import SetupDashboard      from './components/SetupDashboard';
+import UseCasesPage        from './components/UseCasesPage';
+import ProjectsPage        from './components/ProjectsPage';
 
 // Dynamic API URL — start.py writes REACT_APP_API_URL to .env.local before npm start
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
@@ -154,6 +157,7 @@ export default function App() {
   const [metrics, setMetrics]         = useState({});
   const [recentDecisions] = useState([]);
   const [status, setStatus]           = useState({ provider: "ollama", ollama_ok: false, docs: 0, memory: 0, fin_total: 0, fatigue: null });
+  const [setupMissing, setSetupMissing] = useState(0);
 
   // Boot
   useEffect(() => {
@@ -186,6 +190,9 @@ export default function App() {
 
   const refreshStatus = () => {
     fetch(`${API_URL}/api/status`).then(r => r.json()).then(setStatus).catch(() => {});
+    fetch(`${API_URL}/api/setup/status`).then(r => r.json()).then(d => {
+      setSetupMissing(d.missing + d.partial);
+    }).catch(() => {});
   };
 
   const handleProfileUpdate = (updates) => {
@@ -268,6 +275,7 @@ export default function App() {
           onDomain={setDomain}
           status={status}
           apiUrl={API_URL}
+          setupMissing={setupMissing}
         />
 
         {/* Main content */}
@@ -348,6 +356,11 @@ export default function App() {
             </div>
           )}
 
+          {/* PROJECTS */}
+          {activeView === "projects" && (
+            <ProjectsPage apiUrl={API_URL} />
+          )}
+
           {/* DOCS */}
           {activeView === "docs" && (
             <DocBrowser
@@ -375,6 +388,28 @@ export default function App() {
               apiUrl={API_URL}
               domain={domain}
               sessionId={chatSessionId}
+            />
+          )}
+
+          {/* SETUP */}
+          {activeView === "setup" && (
+            <SetupDashboard
+              apiUrl={API_URL}
+              onNavigate={(view) => setActiveView(view)}
+            />
+          )}
+
+          {/* USE CASES */}
+          {activeView === "usecases" && (
+            <UseCasesPage
+              apiUrl={API_URL}
+              onNavigate={(view) => setActiveView(view)}
+              onQuery={(q) => {
+                setActiveView("chat");
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("aletheia:prefill", { detail: q }));
+                }, 80);
+              }}
             />
           )}
 

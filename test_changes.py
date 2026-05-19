@@ -23,7 +23,7 @@ assert SIMULATION_SCHEMA["scenarios"] == list
 print("[PASS] Orchestrator schemas defined")
 
 # Test 3: Guardian tightened validations
-from agents.guardian import validate
+from core.pipeline.guardian import validate
 
 # High risk + <2 scenarios + no assumptions → 2 issues
 result = validate(

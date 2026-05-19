@@ -154,6 +154,20 @@ def search(query: str, limit: int = 10) -> list[dict]:
     ]
 
 
+def find_concepts(query: str, domain: str = "", limit: int = 10) -> list[dict]:
+    """Search concepts by query text, optionally scoped to a domain."""
+    if domain:
+        domain_hits = get_by_domain(domain, limit * 2)
+        q = query.lower()
+        filtered = [
+            r for r in domain_hits
+            if q in r.get("title", "").lower() or q in str(r.get("content", "")).lower()
+        ]
+        if filtered:
+            return filtered[:limit]
+    return search(query, limit)
+
+
 def get_by_domain(domain: str, limit: int = 20) -> list[dict]:
     """Return active concept nodes for a domain."""
     with _db() as conn:

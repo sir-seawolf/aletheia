@@ -22,7 +22,7 @@ def _ctx(mode: str) -> str:
     return f"\n\n--- DATOS FINANCIEROS (PALACE) ---\n{ctx}\n--- FIN DATOS ---\n"
 
 
-def quick_analysis(question: str) -> str:
+def quick_analysis(question: str, session_id: str = "local") -> str:
     """Voice-optimized KRONOS response — 2-4 sentences, real data."""
     prompt = (
         f"{SYSTEM_PROMPT}"
@@ -35,7 +35,7 @@ def quick_analysis(question: str) -> str:
     return llm_router.generate(
         task="chat",
         prompt=prompt,
-        context={"domain": "kronos", "mode": "voice"},
+        context={"domain": "kronos", "mode": "voice", "session_id": session_id},
         temp=0.4,
         agent_id=_AGENT_ID,
     )
