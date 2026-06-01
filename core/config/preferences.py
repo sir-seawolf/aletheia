@@ -20,10 +20,15 @@ Schema:
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 _PREFS_PATH = Path(__file__).parent.parent.parent / "PALACE" / "config" / "preferences.json"
+
+_prefs_cache: dict[str, Any] | None = None
+_prefs_cache_ts: float = 0.0
+_PREFS_CACHE_TTL = 5.0
 
 _DEFAULTS: dict[str, Any] = {
     "llm": {
@@ -52,21 +57,31 @@ _DEFAULTS: dict[str, Any] = {
 
 
 def load() -> dict[str, Any]:
+    global _prefs_cache, _prefs_cache_ts
+    if _prefs_cache is not None and (time.monotonic() - _prefs_cache_ts) < _PREFS_CACHE_TTL:
+        return _prefs_cache
     if not _PREFS_PATH.exists():
-        return _deep_copy(_DEFAULTS)
-    try:
-        data = json.loads(_PREFS_PATH.read_text(encoding="utf-8"))
-        return _merge(_DEFAULTS, data)
-    except Exception:
-        return _deep_copy(_DEFAULTS)
+        result = _deep_copy(_DEFAULTS)
+    else:
+        try:
+            data = json.loads(_PREFS_PATH.read_text(encoding="utf-8"))
+            result = _merge(_DEFAULTS, data)
+        except Exception:
+            result = _deep_copy(_DEFAULTS)
+    _prefs_cache = result
+    _prefs_cache_ts = time.monotonic()
+    return result
 
 
 def save(prefs: dict[str, Any]) -> None:
+    global _prefs_cache, _prefs_cache_ts
     _PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
     _PREFS_PATH.write_text(
         json.dumps(prefs, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    _prefs_cache = None
+    _prefs_cache_ts = 0.0
 
 
 def update(section: str, updates: dict[str, Any]) -> dict[str, Any]:
@@ -82,11 +97,12 @@ def get_llm_provider() -> str:
 
 
 _ENV_MAP = {
-    "claude":    "ANTHROPIC_API_KEY",
-    "openai":    "OPENAI_API_KEY",
-    "deepseek":  "DEEPSEEK_API_KEY",
-    "groq":      "GROQ_API_KEY",
-    "mistral":   "MISTRAL_API_KEY",
+    "claude":       "ANTHROPIC_API_KEY",
+    "openai":       "OPENAI_API_KEY",
+    "deepseek":     "DEEPSEEK_API_KEY",
+    "groq":         "GROQ_API_KEY",
+    "mistral":      "MISTRAL_API_KEY",
+    "openrouter":   "OPENROUTER_API_KEY",
 }
 
 

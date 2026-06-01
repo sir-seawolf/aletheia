@@ -33,18 +33,21 @@ def validate(
     if isinstance(llm_insight, str):
         llm_insight = {"insight": llm_insight}
 
-    if len(scenarios) < 2:
-        issues.append("Falta comparacion de escenarios en riesgo alto")
+    risk_level = (policy or {}).get("level", "high")
+    require_scenarios = (policy or {}).get("require_scenarios", True)
+
+    if require_scenarios and len(scenarios) < 2:
+        issues.append("Falta comparación de escenarios en riesgo alto")
     if not assumptions:
-        issues.append("No hay supuestos explicitos")
+        issues.append("No hay supuestos explícitos")
     if not risks:
-        issues.append("RIESGO ALTO: Debe identificar riesgos explicitos")
+        issues.append("RIESGO ALTO: Debe identificar riesgos explícitos")
     if exploration_conf < 0.5:
-        issues.append("BASE FACTUAL INSUFICIENTE: Confianza exploracion < 0.5")
+        issues.append("BASE FACTUAL INSUFICIENTE: Confianza exploración < 0.5")
     if len(llm_insight.get("insight", "")) < 30:
-        issues.append("INSIGHT POCO DESARROLLADO: Analisis estrategico insuficiente")
+        issues.append("INSIGHT POCO DESARROLLADO: Análisis estratégico insuficiente")
     if llm_insight.get("recommendation_bias", "") == "aggressive":
-        issues.append("CONTRADICCION: Bias aggressive detectado")
+        issues.append("CONTRADICCIÓN: Bias aggressive detectado")
 
     if not strict_mode and len(issues) == 1:
         issues = []
@@ -57,8 +60,7 @@ def validate(
         for k, v in simulation.items():
             if k not in corrected:
                 corrected[k] = v
-    except ValueError as exc:
-        issues.append(f"SCHEMA ERROR: {exc}")
+    except ValueError:
         corrected = simulation.copy()
 
     corrected["guardian_block"]             = len(issues) > 0

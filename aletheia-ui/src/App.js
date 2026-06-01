@@ -7,9 +7,6 @@ import DocBrowser       from './components/DocBrowser';
 import SettingsPage     from './components/SettingsPage';
 import ThinkingPanel    from './components/ThinkingPanel';
 import ChatView         from './components/ChatView';
-import DashboardKPIs    from './components/DashboardKPIs';
-import DqsChart         from './components/DqsChart';
-import DecisionList     from './components/DecisionList';
 import Sidebar          from './components/Sidebar';
 import CommandPalette      from './components/CommandPalette';
 import HelpPanel           from './components/HelpPanel';
@@ -76,7 +73,10 @@ function Navbar({ status, onPalette, onHelp, panelOpen, onTogglePanel }) {
 
       {/* Status chips */}
       <div style={{ display: "flex", gap: 6, flex: 1, flexWrap: "nowrap", overflow: "hidden" }}>
-        <StatusChip ok={status.ollama_ok} label={status.provider || "ollama"} />
+        <StatusChip
+          ok={status.ollama_ok || (status.provider !== "ollama")}
+          label={status.provider === "ollama" ? "LOCAL" : `CLOUD · ${status.provider || "?"}`}
+        />
         <FatigueChip fatigue={status.fatigue ?? null} />
         {status.memory > 0 && (
           <span style={{ fontSize: 11, color: "#6b7280" }}>🧠 {status.memory}</span>
@@ -154,8 +154,6 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen]       = useState(false);
   const [recentQueries, setRecentQueries] = useState([]);
-  const [metrics, setMetrics]         = useState({});
-  const [recentDecisions] = useState([]);
   const [status, setStatus]           = useState({ provider: "ollama", ollama_ok: false, docs: 0, memory: 0, fin_total: 0, fatigue: null });
   const [setupMissing, setSetupMissing] = useState(0);
 
@@ -181,12 +179,6 @@ export default function App() {
       window.removeEventListener("aletheia:help", handleHelp);
     };
   }, []);
-
-  useEffect(() => {
-    if (activeView === "dashboard") {
-      fetch(`${API_URL}/system/metrics`).then(r => r.json()).then(setMetrics).catch(() => {});
-    }
-  }, [activeView]);
 
   const refreshStatus = () => {
     fetch(`${API_URL}/api/status`).then(r => r.json()).then(setStatus).catch(() => {});
@@ -278,8 +270,8 @@ export default function App() {
           setupMissing={setupMissing}
         />
 
-        {/* Main content */}
-        <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem 2rem" }}>
+        {/* Main content — margin-right tracks the ThinkingPanel width so it never overlaps */}
+        <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem 2rem", marginRight: panelOpen ? 300 : 40 }}>
 
           {/* CHAT */}
           {activeView === "chat" && (
@@ -368,18 +360,6 @@ export default function App() {
               domain={domain}
               onResult={(r) => { setResult(r); setActiveView("simulate"); }}
             />
-          )}
-
-          {/* DASHBOARD */}
-          {activeView === "dashboard" && (
-            <div>
-              <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 20 }}>Dashboard</h1>
-              <DashboardKPIs metrics={metrics} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20 }}>
-                <DqsChart data={[]} />
-                <DecisionList decisions={recentDecisions} />
-              </div>
-            </div>
           )}
 
           {/* COGNITIVE */}

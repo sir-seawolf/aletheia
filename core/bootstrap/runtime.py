@@ -1023,6 +1023,140 @@ async def update_preferences(body: Dict):
     }
 
 
+@app.get("/api/llm/ollama/models")
+async def llm_ollama_models():
+    """List models currently installed in the local Ollama instance."""
+    import asyncio as _aio, functools as _ft
+    try:
+        import requests as _r
+        resp = await _aio.get_event_loop().run_in_executor(
+            None, _ft.partial(_r.get, "http://localhost:11434/api/tags", timeout=2)
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            names = [m["name"] for m in data.get("models", [])]
+            return {"ok": True, "models": names}
+    except Exception:
+        pass
+    return {"ok": False, "models": []}
+
+
+@app.post("/api/llm/test")
+async def llm_test(body: Dict = None):
+    """
+    Test connectivity for a provider.
+    Body (optional): { "provider": "groq", "api_key": "sk-..." }
+    Falls back to the currently configured provider if body is omitted.
+    """
+    import asyncio as _aio, functools as _ft
+    from core.config.preferences import load as load_prefs
+    body     = body or {}
+    prefs    = load_prefs()
+    provider = body.get("provider") or prefs.get("llm", {}).get("provider", "ollama")
+    api_key  = body.get("api_key")  or prefs.get("llm", {}).get("api_key", "")
+
+    if provider == "ollama":
+        try:
+            import requests as _r
+            resp = await _aio.get_event_loop().run_in_executor(
+                None, _ft.partial(_r.get, "http://localhost:11434/api/tags", timeout=2)
+            )
+            if resp.status_code == 200:
+                names = [m["name"] for m in resp.json().get("models", [])]
+                return {"ok": True, "provider": "ollama", "models": names, "error": None}
+            return {"ok": False, "provider": "ollama", "models": [], "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"ok": False, "provider": "ollama", "models": [], "error": str(e)}
+
+    if provider == "openrouter":
+        if not api_key:
+            return {"ok": False, "provider": "openrouter", "models": [], "error": "API key no configurada"}
+        try:
+            from core.llm.providers.openrouter_provider import OpenRouterProvider
+            free_models = OpenRouterProvider().list_free_models()
+            return {"ok": True, "provider": "openrouter", "models": free_models,
+                    "note": "Clave presente — acceso a modelos gratuitos confirmado", "error": None}
+        except Exception as e:
+            return {"ok": False, "provider": "openrouter", "models": [], "error": str(e)}
+
+    if not api_key:
+        return {"ok": False, "provider": provider, "models": [], "error": "API key no configurada"}
+    return {"ok": True, "provider": provider, "models": [], "note": "Clave presente — se validará en el primer chat", "error": None}
+
+
+@app.post("/api/llm/refresh_catalog")
+async def llm_refresh_catalog():
+    """Refresh provider availability/metrics snapshot for ranking policies."""
+    from core.llm.provider_ranker import refresh_catalog
+    return refresh_catalog()
+
+
+@app.get("/api/llm/ranking")
+async def llm_ranking(policy: str = Query(default="fastest")):
+    """Return provider ranking by policy: fastest | most_reliable."""
+    from core.llm.provider_ranker import rank
+    return rank(policy=policy)
+
+
+@app.get("/api/llm/discover")
+async def llm_discover():
+    """
+    Auto-detect which LLM providers are currently available (configured + reachable).
+    Returns a ranked list with status and recommended use per provider.
+    """
+    import asyncio as _aio, functools as _ft, os
+    from core.config.preferences import load as load_prefs
+    prefs    = load_prefs()
+    stored   = prefs.get("llm", {}).get("provider", "ollama")
+    api_key  = prefs.get("llm", {}).get("api_key", "")
+
+    results = []
+
+    # ── Ollama (local) ──────────────────────────────────────────────────────
+    ollama_ok = False
+    ollama_models: list = []
+    try:
+        import requests as _r
+        r = await _aio.get_event_loop().run_in_executor(
+            None, _ft.partial(_r.get, "http://localhost:11434/api/tags", timeout=2)
+        )
+        if r.status_code == 200:
+            ollama_ok = True
+            ollama_models = [m["name"] for m in r.json().get("models", [])]
+    except Exception:
+        pass
+    results.append({
+        "provider": "ollama", "label": "Ollama (local)", "ok": ollama_ok,
+        "models": ollama_models, "free": True, "needs_key": False,
+        "use_for": "privacidad, tareas locales, voz",
+        "active": stored == "ollama",
+    })
+
+    # ── Cloud providers (check if key configured) ───────────────────────────
+    _cloud = [
+        ("groq",       "Groq",                     "GROQ_API_KEY",       True,  "chat rápido, tareas frecuentes"),
+        ("openrouter", "OpenRouter (20+ modelos)",  "OPENROUTER_API_KEY", True,  "variedad, modelos gratuitos potentes"),
+        ("deepseek",   "DeepSeek",                  "DEEPSEEK_API_KEY",   True,  "análisis, razonamiento"),
+        ("mistral",    "Mistral AI",                "MISTRAL_API_KEY",    True,  "escritura, síntesis"),
+        ("claude",     "Claude (Anthropic)",         "ANTHROPIC_API_KEY",  False, "tareas complejas, premium"),
+        ("openai",     "OpenAI / GPT",              "OPENAI_API_KEY",     False, "tareas complejas, premium"),
+    ]
+    for pname, label, env_var, is_free, use_for in _cloud:
+        key_present = bool((stored == pname and api_key) or os.getenv(env_var, ""))
+        extra_models: list = []
+        if pname == "openrouter" and key_present:
+            from core.llm.providers.openrouter_provider import OpenRouterProvider
+            extra_models = OpenRouterProvider().list_free_models()
+        results.append({
+            "provider": pname, "label": label, "ok": key_present,
+            "models": extra_models, "free": is_free, "needs_key": True,
+            "use_for": use_for, "active": stored == pname,
+        })
+
+    configured = sum(1 for r in results if r["ok"])
+    return {"providers": results, "configured": configured, "total": len(results)}
+
+
 @app.post("/api/settings/credentials/gdrive")
 async def save_gdrive_credentials(creds_file: UploadFile = File(...)):
     """Upload gdrive_credentials.json to PALACE/config/."""
@@ -1133,11 +1267,14 @@ async def system_status():
     prefs    = load_prefs()
     provider = prefs.get("llm", {}).get("provider", "ollama")
 
-    # Ollama alive check
+    # Ollama alive check — run in executor so we never block the event loop
     ollama_ok = False
     try:
-        import requests as _r
-        ollama_ok = _r.get("http://localhost:11434", timeout=1).status_code == 200
+        import asyncio as _aio, functools as _ft, requests as _r
+        _resp = await _aio.get_event_loop().run_in_executor(
+            None, _ft.partial(_r.get, "http://localhost:11434", timeout=1)
+        )
+        ollama_ok = _resp.status_code == 200
     except Exception:
         pass
 
@@ -1161,10 +1298,9 @@ async def system_status():
     # Memory nodes count
     mem_count = 0
     try:
-        from memory.storage import MEMORY_DB_PATH, init_db
+        from memory.storage import MEMORY_DB_PATH
         import sqlite3 as _sq
-        init_db()
-        with _sq.connect(MEMORY_DB_PATH) as _c:
+        with _sq.connect(MEMORY_DB_PATH, timeout=1) as _c:
             mem_count = _c.execute("SELECT COUNT(*) FROM memory_nodes").fetchone()[0]
     except Exception:
         pass
@@ -2340,7 +2476,7 @@ async def setup_status():
                   else ("Whisper OK, falta Piper (TTS)" if whisper_ok else
                         ("Piper OK, falta Whisper (STT)" if piper_ok else
                          "Modelos no descargados — arranca con: python start.py --voice")),
-        "critical": False, "nav": None, "section": None,
+        "critical": False, "nav": "settings", "section": "voice",
     })
 
     connected  = sum(1 for s in systems if s["status"] == "ok")

@@ -20,7 +20,6 @@ const VIEWS = [
   { id: "projects",  icon: "⚖️", label: "Proyectos" },
   { id: "docs",      icon: "📂", label: "Documentos" },
   { id: "cognitive", icon: "◈",  label: "Cognitivo" },
-  { id: "dashboard", icon: "📊", label: "Dashboard" },
   { id: "settings",  icon: "⚙️",  label: "Config" },
   { id: "help",      icon: "❓", label: "Ayuda" },
 ];

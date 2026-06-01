@@ -79,29 +79,44 @@ const PROFILE_META = {
 };
 
 const LLM_PROVIDERS = [
-  { value: "ollama",   label: "Ollama (local)",      needsKey: false },
-  { value: "claude",   label: "Claude (Anthropic)",  needsKey: true  },
-  { value: "openai",   label: "OpenAI / GPT",        needsKey: true  },
-  { value: "deepseek", label: "DeepSeek (gratis)",   needsKey: true  },
-  { value: "groq",     label: "Groq (gratis, rápido)", needsKey: true },
-  { value: "mistral",  label: "Mistral AI",          needsKey: true  },
+  { value: "ollama",      label: "Ollama (local)",           needsKey: false },
+  { value: "openrouter",  label: "OpenRouter ✦ gratis",      needsKey: true  },
+  { value: "groq",        label: "Groq ✦ gratis",            needsKey: true  },
+  { value: "deepseek",    label: "DeepSeek ✦ gratis",        needsKey: true  },
+  { value: "claude",      label: "Claude (Anthropic)",       needsKey: true  },
+  { value: "openai",      label: "OpenAI / GPT",             needsKey: true  },
+  { value: "mistral",     label: "Mistral AI",               needsKey: true  },
 ];
 
 const LLM_MODELS = {
-  ollama:   ["llama3.2:3b", "llama3.1:8b", "mistral:7b", "gemma3:4b"],
-  claude:   ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-7"],
-  openai:   ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner"],
-  groq:     ["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"],
-  mistral:  ["mistral-small-latest", "mistral-medium-latest", "open-mixtral-8x7b"],
+  ollama:      ["llama3.2:3b", "llama3.1:8b", "mistral:7b", "gemma3:4b"],
+  openrouter:  [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+    "mistralai/mistral-7b-instruct:free",
+    "microsoft/phi-4-reasoning-plus:free",
+  ],
+  groq:        ["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"],
+  deepseek:    ["deepseek-chat", "deepseek-reasoner"],
+  claude:      ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-7"],
+  openai:      ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+  mistral:     ["mistral-small-latest", "mistral-medium-latest", "open-mixtral-8x7b"],
 };
 
 const PROVIDER_LINKS = {
-  claude:   "https://console.anthropic.com/",
-  openai:   "https://platform.openai.com/api-keys",
-  deepseek: "https://platform.deepseek.com/",
-  groq:     "https://console.groq.com/keys",
-  mistral:  "https://console.mistral.ai/",
+  openrouter: "https://openrouter.ai/keys",
+  claude:     "https://console.anthropic.com/",
+  openai:     "https://platform.openai.com/api-keys",
+  deepseek:   "https://platform.deepseek.com/",
+  groq:       "https://console.groq.com/keys",
+  mistral:    "https://console.mistral.ai/",
+};
+
+const PROVIDER_FREE_NOTE = {
+  openrouter: "20+ modelos gratuitos con una sola clave — openrouter.ai (registro gratis)",
+  groq:       "Tier gratuito: hasta 6000 req/día — console.groq.com",
+  deepseek:   "Muy económico — platform.deepseek.com",
 };
 
 const PIPER_MODELS = [
@@ -257,6 +272,17 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
 
   const [gmailAvailable, setGmailAvailable] = useState(false);
 
+  // LLM test / discover state
+  const [ollamaStatus, setOllamaStatus]   = useState(null); // null | { ok, models, error }
+  const [ollamaModels, setOllamaModels]   = useState([]);   // real installed models
+  const [llmTesting, setLlmTesting]       = useState(false);
+  const [llmActivating, setLlmActivating] = useState(null); // "ollama" | provider name
+  const [discovering, setDiscovering]     = useState(false);
+  const [discoverResult, setDiscoverResult] = useState(null); // { providers, configured, total }
+  const [routingPolicy, setRoutingPolicy] = useState("fastest");
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingResult, setRankingResult] = useState(null);
+
   useEffect(() => {
     const handler = (e) => setActiveSection(e.detail);
     window.addEventListener("aletheia:settings-section", handler);
@@ -285,6 +311,7 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
           model: d.llm?.model || "",
           api_key: "",
         });
+        setRoutingPolicy(d.llm?.routing_policy || "fastest");
         setVoiceForm(v => ({ ...v, ...d.voice }));
         if (d.system) setSystemForm(d.system);
       })
@@ -309,16 +336,6 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
     });
     onProfileUpdate(updates);
     flash("Perfil guardado.");
-  };
-
-  const saveLlm = async () => {
-    await fetch(`${apiUrl}/api/settings/preferences`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ section: "llm", updates: llmForm }),
-    });
-    setSettings(s => ({ ...s, llm: { provider: llmForm.provider, model: llmForm.model, has_api_key: !!llmForm.api_key } }));
-    flash("LLM guardado.");
   };
 
   const authorizeCalendar = async () => {
@@ -444,6 +461,93 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
     }
   };
 
+  // Probe Ollama when entering the LLM section
+  useEffect(() => {
+    if (activeSection !== "llm") return;
+    fetch(`${apiUrl}/api/llm/ollama/models`)
+      .then(r => r.json())
+      .then(d => {
+        setOllamaStatus({ ok: d.ok, models: d.models, error: d.ok ? null : "Ollama no responde" });
+        if (d.ok && d.models.length > 0) setOllamaModels(d.models);
+      })
+      .catch(() => setOllamaStatus({ ok: false, models: [], error: "Sin conexión con Ollama" }));
+  }, [activeSection, apiUrl]);
+
+  const runDiscover = async () => {
+    setDiscovering(true);
+    try {
+      const r = await fetch(`${apiUrl}/api/llm/discover`);
+      const d = await r.json();
+      setDiscoverResult(d);
+    } catch (e) {
+      flash(`Error al descubrir: ${e.message}`);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const saveRoutingPolicy = async () => {
+    try {
+      await fetch(`${apiUrl}/api/settings/preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: "llm", updates: { routing_policy: routingPolicy } }),
+      });
+      flash(`Política guardada: ${routingPolicy}`);
+    } catch (e) {
+      flash(`Error guardando política: ${e.message}`);
+    }
+  };
+
+  const refreshCatalogAndRanking = async (policy = routingPolicy) => {
+    setRankingLoading(true);
+    try {
+      await fetch(`${apiUrl}/api/llm/refresh_catalog`, { method: "POST" });
+      const r = await fetch(`${apiUrl}/api/llm/ranking?policy=${encodeURIComponent(policy)}`);
+      const d = await r.json();
+      setRankingResult(d);
+    } catch (e) {
+      flash(`Error actualizando ranking: ${e.message}`);
+    } finally {
+      setRankingLoading(false);
+    }
+  };
+
+  const testLlm = async (targetProvider) => {
+    setLlmTesting(true);
+    try {
+      const r = await fetch(`${apiUrl}/api/llm/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: targetProvider, api_key: llmForm.api_key }),
+      });
+      const d = await r.json();
+      flash(d.ok ? `✓ ${targetProvider}: ${d.note || "conexión OK"}` : `Error: ${d.error}`);
+    } catch (e) {
+      flash(`Error: ${e.message}`);
+    } finally {
+      setLlmTesting(false);
+    }
+  };
+
+  const activateLlm = async (targetProvider, model, api_key) => {
+    setLlmActivating(targetProvider);
+    try {
+      const updates = { provider: targetProvider, model: model || "" };
+      if (api_key) updates.api_key = api_key; // never overwrite a saved key with an empty string
+      await fetch(`${apiUrl}/api/settings/preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: "llm", updates }),
+      });
+      setSettings(s => ({ ...s, llm: { provider: targetProvider, model, has_api_key: !!api_key || !!s?.llm?.has_api_key } }));
+      setLlmForm(f => ({ ...f, provider: targetProvider, model: model || "" }));
+      flash(`Proveedor activo: ${targetProvider}`);
+    } finally {
+      setLlmActivating(null);
+    }
+  };
+
   const NAV = [
     { id: "profile",  label: "Perfil" },
     { id: "llm",      label: "LLM" },
@@ -469,8 +573,6 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
       cursor: "pointer",
     }}>{label}</button>
   );
-
-  const selectedProvider = LLM_PROVIDERS.find(p => p.value === llmForm.provider);
 
   return (
     <div>
@@ -515,41 +617,262 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
           )}
 
           {/* ── LLM ── */}
-          {activeSection === "llm" && (
-            <div style={SECTION}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: "#f9fafb" }}>Modelo de lenguaje</h2>
+          {activeSection === "llm" && (() => {
+            const activeProvider = settings?.llm?.provider || llmForm.provider;
+            const cloudProviders = LLM_PROVIDERS.filter(p => p.needsKey);
+            const isCloudActive  = activeProvider !== "ollama";
 
-              {/* Provider pills */}
-              <label style={LABEL}>Proveedor</label>
-              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                {LLM_PROVIDERS.map(p => (
-                  <button key={p.value} onClick={() => setLlmForm(f => ({ ...f, provider: p.value, model: "" }))} style={{
-                    padding: "6px 16px", borderRadius: 20,
-                    border: `1px solid ${llmForm.provider === p.value ? "#818cf8" : "#374151"}`,
-                    background: llmForm.provider === p.value ? "rgba(129,140,248,0.15)" : "transparent",
-                    color: llmForm.provider === p.value ? "#818cf8" : "#9ca3af",
-                    fontSize: 13, cursor: "pointer",
-                    fontWeight: llmForm.provider === p.value ? 600 : 400,
-                  }}>{p.label}</button>
-                ))}
-              </div>
+            const cardStyle = (active) => ({
+              background: "#060610",
+              border: `1px solid ${active ? "#818cf8" : "#1f2937"}`,
+              borderRadius: 12,
+              padding: "1.25rem",
+              marginBottom: 16,
+              position: "relative",
+            });
 
-              {/* Model selector */}
-              <label style={LABEL}>Modelo</label>
-              <select
-                value={llmForm.model}
-                onChange={e => setLlmForm(f => ({ ...f, model: e.target.value }))}
-                style={{ ...INPUT, marginBottom: 16 }}
-              >
-                <option value="">— Por defecto —</option>
-                {(LLM_MODELS[llmForm.provider] || []).map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+            const activeBadge = (
+              <span style={{
+                position: "absolute", top: 12, right: 12,
+                fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                background: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.3)",
+                color: "#4ade80", fontWeight: 700, letterSpacing: "0.06em",
+              }}>ACTIVO</span>
+            );
 
-              {/* API key (only for cloud providers) */}
-              {selectedProvider?.needsKey && (
-                <>
+            return (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <h2 style={{ fontSize: 15, fontWeight: 700, color: "#f9fafb", margin: 0 }}>Modelo de lenguaje</h2>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      style={{ ...BTN_GHOST, fontSize: 12, display: "flex", alignItems: "center", gap: 6, opacity: discovering ? 0.6 : 1 }}
+                      onClick={runDiscover}
+                      disabled={discovering}
+                    >
+                      <span style={{ fontSize: 14 }}>🔍</span>
+                      {discovering ? "Descubriendo…" : "Descubrir disponibles"}
+                    </button>
+                    <button
+                      style={{ ...BTN_GHOST, fontSize: 12, opacity: rankingLoading ? 0.6 : 1 }}
+                      onClick={() => refreshCatalogAndRanking(routingPolicy)}
+                      disabled={rankingLoading}
+                    >
+                      {rankingLoading ? "Actualizando…" : "Actualizar listado"}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ background: "#060610", border: "1px solid #1f2937", borderRadius: 12, padding: "1rem", marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                    Política de routing
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                    <select
+                      value={routingPolicy}
+                      onChange={e => setRoutingPolicy(e.target.value)}
+                      style={{ ...INPUT, maxWidth: 220 }}
+                    >
+                      <option value="fastest">Más rápido (fastest)</option>
+                      <option value="most_reliable">Más fiable (most_reliable)</option>
+                    </select>
+                    <button style={{ ...BTN_PRIMARY, fontSize: 12 }} onClick={saveRoutingPolicy}>
+                      Guardar política
+                    </button>
+                    <button style={{ ...BTN_GHOST, fontSize: 12 }} onClick={() => refreshCatalogAndRanking(routingPolicy)}>
+                      Ver ranking
+                    </button>
+                  </div>
+
+                  {rankingResult?.ranking && (
+                    <div>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6 }}>
+                        Ranking actual — política: <span style={{ color: "#818cf8" }}>{rankingResult.policy}</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {rankingResult.ranking.slice(0, 5).map((p, i) => (
+                          <div key={p.provider} style={{
+                            display: "flex", alignItems: "center", gap: 8,
+                            border: "1px solid #1f2937", borderRadius: 8, padding: "6px 10px",
+                            background: p.available ? "rgba(74,222,128,0.04)" : "transparent",
+                          }}>
+                            <span style={{ width: 18, color: "#6b7280", fontSize: 12 }}>#{i + 1}</span>
+                            <span style={{ flex: 1, color: p.available ? "#f9fafb" : "#6b7280", fontSize: 13 }}>{p.provider}</span>
+                            <span style={{ fontSize: 11, color: "#9ca3af" }}>{p.latency_ms}ms</span>
+                            <span style={{ fontSize: 11, color: "#9ca3af" }}>{Math.round((p.reliability || 0) * 100)}%</span>
+                            <span style={{ fontSize: 10, color: p.available ? "#4ade80" : "#f87171" }}>
+                              {p.available ? "● disponible" : "○ no disponible"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Panel de descubrimiento ── */}
+                {discoverResult && (
+                  <div style={{ background: "#060610", border: "1px solid #1f2937", borderRadius: 12, padding: "1rem", marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+                      {discoverResult.configured} de {discoverResult.total} proveedores disponibles
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {discoverResult.providers.map(p => (
+                        <div key={p.provider} style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "8px 12px", borderRadius: 8,
+                          background: p.active ? "rgba(99,102,241,0.08)" : "transparent",
+                          border: `1px solid ${p.ok ? "rgba(74,222,128,0.15)" : "#1f2937"}`,
+                        }}>
+                          <span style={{ fontSize: 13, color: p.ok ? "#4ade80" : "#4b5563", flexShrink: 0 }}>
+                            {p.ok ? "●" : "○"}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: p.ok ? "#f9fafb" : "#4b5563" }}>{p.label}</span>
+                              {p.free && p.ok && (
+                                <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.2)" }}>GRATIS</span>
+                              )}
+                              {p.active && (
+                                <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>ACTIVO</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 1 }}>{p.use_for}</div>
+                          </div>
+                          {p.ok && !p.active && (
+                            <button
+                              style={{ ...BTN_GHOST, fontSize: 11, padding: "4px 10px", flexShrink: 0, opacity: llmActivating === p.provider ? 0.6 : 1 }}
+                              onClick={() => activateLlm(p.provider, "", "")}
+                              disabled={llmActivating === p.provider}
+                            >
+                              {llmActivating === p.provider ? "…" : "Activar"}
+                            </button>
+                          )}
+                          {!p.ok && p.needs_key && (
+                            <span style={{ fontSize: 11, color: "#374151", flexShrink: 0 }}>sin clave</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── LOCAL (Ollama) ── */}
+                <div style={cardStyle(!isCloudActive)}>
+                  {!isCloudActive && activeBadge}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <span style={{ fontSize: 18 }}>🏠</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb" }}>LOCAL — Ollama</div>
+                      <div style={{ fontSize: 11, color: "#6b7280" }}>Privado, sin coste, requiere GPU o CPU potente</div>
+                    </div>
+                    {(() => {
+                      const ollamaOk      = ollamaStatus?.ok;
+                      const ollamaLoading = ollamaStatus === null;
+                      const statusColor   = ollamaOk ? "#4ade80" : (ollamaLoading ? "#6b7280" : "#f87171");
+                      const statusBg      = ollamaOk ? "rgba(74,222,128,0.1)"  : "rgba(248,113,113,0.1)";
+                      const statusBorder  = ollamaOk ? "rgba(74,222,128,0.3)"  : "rgba(248,113,113,0.25)";
+                      const statusLabel   = ollamaLoading ? "comprobando…" : (ollamaOk ? "● conectado" : "● sin conexión");
+                      return (
+                        <span style={{ marginLeft: "auto", fontSize: 11, padding: "2px 8px", borderRadius: 20, background: statusBg, border: `1px solid ${statusBorder}`, color: statusColor }}>
+                          {statusLabel}
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  <label style={LABEL}>Modelo</label>
+                  <select
+                    value={isCloudActive ? "" : (llmForm.model || "")}
+                    onChange={e => setLlmForm(f => ({ ...f, provider: "ollama", model: e.target.value }))}
+                    style={{ ...INPUT, marginBottom: 12 }}
+                  >
+                    <option value="">— Por defecto —</option>
+                    {(ollamaModels.length > 0 ? ollamaModels : LLM_MODELS.ollama).map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+
+                  <div style={{ fontSize: 11, color: "#4b5563", marginBottom: 12 }}>
+                    Ollama debe estar corriendo: <code style={{ color: "#818cf8" }}>ollama serve</code>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      style={{ ...BTN_GHOST, fontSize: 12 }}
+                      onClick={() => {
+                        setOllamaStatus(null);
+                        fetch(`${apiUrl}/api/llm/ollama/models`)
+                          .then(r => r.json())
+                          .then(d => {
+                            setOllamaStatus({ ok: d.ok, models: d.models, error: d.ok ? null : "Ollama no responde" });
+                            if (d.ok && d.models.length > 0) setOllamaModels(d.models);
+                          })
+                          .catch(() => setOllamaStatus({ ok: false, models: [], error: "Sin conexión" }));
+                      }}
+                    >
+                      Probar
+                    </button>
+                    <button
+                      style={{ ...BTN_PRIMARY, fontSize: 12, opacity: llmActivating === "ollama" ? 0.6 : 1 }}
+                      onClick={() => activateLlm("ollama", llmForm.provider === "ollama" ? llmForm.model : "", "")}
+                      disabled={llmActivating === "ollama"}
+                    >
+                      {llmActivating === "ollama" ? "Activando…" : "Activar LOCAL"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── ONLINE (Cloud) ── */}
+                <div style={cardStyle(isCloudActive)}>
+                  {isCloudActive && activeBadge}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    <span style={{ fontSize: 18 }}>☁️</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#f9fafb" }}>ONLINE — Cloud</div>
+                      <div style={{ fontSize: 11, color: "#6b7280" }}>Máxima capacidad, requiere API key</div>
+                    </div>
+                  </div>
+
+                  {/* Provider pills */}
+                  <label style={LABEL}>Proveedor</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                    {cloudProviders.map(p => (
+                      <button key={p.value}
+                        onClick={() => setLlmForm(f => ({ ...f, provider: p.value, model: "" }))}
+                        style={{
+                          padding: "5px 14px", borderRadius: 20, fontSize: 12, cursor: "pointer",
+                          border: `1px solid ${llmForm.provider === p.value ? "#818cf8" : "#374151"}`,
+                          background: llmForm.provider === p.value ? "rgba(129,140,248,0.15)" : "transparent",
+                          color: llmForm.provider === p.value ? "#818cf8" : "#9ca3af",
+                          fontWeight: llmForm.provider === p.value ? 600 : 400,
+                          outline: (isCloudActive && activeProvider === p.value) ? "2px solid rgba(74,222,128,0.4)" : "none",
+                        }}
+                      >{p.label}</button>
+                    ))}
+                  </div>
+
+                  {/* Free provider note */}
+                  {PROVIDER_FREE_NOTE[llmForm.provider] && (
+                    <div style={{ fontSize: 11, color: "#4ade80", padding: "6px 10px", borderRadius: 6, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.15)", marginBottom: 12 }}>
+                      ✦ {PROVIDER_FREE_NOTE[llmForm.provider]}
+                    </div>
+                  )}
+
+                  {/* Model */}
+                  <label style={LABEL}>Modelo</label>
+                  <select
+                    value={llmForm.provider !== "ollama" ? llmForm.model : ""}
+                    onChange={e => setLlmForm(f => ({ ...f, model: e.target.value }))}
+                    style={{ ...INPUT, marginBottom: 12 }}
+                  >
+                    <option value="">— Por defecto —</option>
+                    {(LLM_MODELS[llmForm.provider] || []).map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+
+                  {/* API Key */}
                   <label style={LABEL}>API Key</label>
                   <input
                     type="password"
@@ -559,31 +882,39 @@ export default function SettingsPage({ apiUrl = "http://localhost:8000", profile
                     style={{ ...INPUT, marginBottom: 4 }}
                     autoComplete="off"
                   />
-                  <div style={{ fontSize: 11, color: "#4b5563", marginBottom: 16, display: "flex", gap: 12, alignItems: "center" }}>
+                  <div style={{ fontSize: 11, color: "#4b5563", marginBottom: 12, display: "flex", gap: 12, alignItems: "center" }}>
                     <span>
-                      Se guarda localmente en PALACE/config/ — nunca sale de tu máquina.
-                      {settings?.llm?.has_api_key && <span style={{ color: "#4ade80" }}> ✓ clave guardada</span>}
+                      Guardada localmente — nunca sale de tu máquina.
+                      {isCloudActive && settings?.llm?.has_api_key && <span style={{ color: "#4ade80" }}> ✓ clave guardada</span>}
                     </span>
                     {PROVIDER_LINKS[llmForm.provider] && (
-                      <a href={PROVIDER_LINKS[llmForm.provider]} target="_blank" rel="noreferrer" style={{ color: "#818cf8", whiteSpace: "nowrap" }}>
+                      <a href={PROVIDER_LINKS[llmForm.provider]} target="_blank" rel="noreferrer"
+                        style={{ color: "#818cf8", whiteSpace: "nowrap", fontSize: 11 }}>
                         Obtener clave →
                       </a>
                     )}
                   </div>
-                </>
-              )}
 
-              {llmForm.provider === "ollama" && (
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>
-                  Ollama debe estar corriendo: <code style={{ color: "#818cf8" }}>ollama serve</code>
-                  <br />
-                  Modelos disponibles: <code style={{ color: "#818cf8" }}>ollama list</code>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      style={{ ...BTN_GHOST, fontSize: 12, opacity: llmTesting ? 0.6 : 1 }}
+                      onClick={() => testLlm(llmForm.provider)}
+                      disabled={llmTesting || llmForm.provider === "ollama"}
+                    >
+                      {llmTesting ? "Probando…" : "Probar clave"}
+                    </button>
+                    <button
+                      style={{ ...BTN_PRIMARY, fontSize: 12, opacity: llmActivating === llmForm.provider ? 0.6 : 1 }}
+                      onClick={() => activateLlm(llmForm.provider, llmForm.model, llmForm.api_key)}
+                      disabled={llmActivating === llmForm.provider || llmForm.provider === "ollama"}
+                    >
+                      {llmActivating === llmForm.provider ? "Activando…" : "Activar CLOUD"}
+                    </button>
+                  </div>
                 </div>
-              )}
-
-              <button style={BTN_PRIMARY} onClick={saveLlm}>Guardar configuración LLM</button>
-            </div>
-          )}
+              </div>
+            );
+          })()}
 
           {/* ── GMAIL ── */}
           {activeSection === "gmail" && (

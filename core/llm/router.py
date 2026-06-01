@@ -206,6 +206,9 @@ class LLMRouter:
         if provider == "mistral":
             from core.llm.providers.mistral_provider import MistralProvider
             return MistralProvider(api_key=key).generate(prompt, temp=temp)
+        if provider == "openrouter":
+            from core.llm.providers.openrouter_provider import OpenRouterProvider
+            return OpenRouterProvider(api_key=key).generate(prompt, temp=temp)
         # ollama or unknown
         return self.ollama.generate(prompt, temp=temp)
 
