@@ -12,30 +12,48 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <!-- cloude-code-toolbox:mcp-skills-awareness-begin -->
 
 ### MCP & Skills awareness (Cloude Code ToolBox)
 
-_Last synced: 2026-05-04T20:18:24.099Z._
+_Last synced: 2026-05-27T07:27:11.334Z._
 
 - **Full report:** `.claude/cloude-code-toolbox-mcp-skills-awareness.md` in this workspace (auto-overwritten on each scan). Use it as ground truth for configured servers and skill folders.
-- **MCP:** For **live tools** in Claude Code, enable the matching server via `/mcp` (and VS Code `mcp.json` where applicable).
+- **MCP:** For **live tools** in Claude Code, enable the matching server via `/mcp`. Servers are configured in `~/.claude.json` (user) and `.mcp.json` (project).
 - **When the user’s task matches a server** (e.g. Confluence work and a **Confluence** / **Atlassian** MCP is listed), **prefer that server id** and plan on tool use—not only file search.
 - **Skills:** Folders below contain `SKILL.md`; attach or cite paths in chat when relevant.
 
 #### Workspace MCP
 
-- `d:\Proyectos\aletheia-core\aletheia\.vscode\mcp.json` _(workspace: aletheia)_ — _file missing_
+- `d:\Proyectos\aletheia-core\aletheia\.mcp.json` _(workspace: aletheia)_ — _file missing_
 
 _No active workspace servers in mcp.json._
 
 #### User MCP
 
-- `C:\Users\pascu\AppData\Roaming\Code\User\mcp.json` — _servers defined_
+- `C:\Users\pascu\.claude.json` — _no servers defined_
 
-| Server id | Kind | Detail |
-|-----------|------|--------|
-| io.github.github/github-mcp-server | http | https://api.githubcopilot.com/mcp/ |
+_No active user-scoped servers in mcp.json._
 
 #### Project skills
 
@@ -43,7 +61,7 @@ _None found (or no workspace open)._
 
 #### User skills
 
-_None found._
+- **microsoft-foundry** — `C:\Users\pascu\.agents\skills\microsoft-foundry` — Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from trac
 
 <!-- cloude-code-toolbox:mcp-skills-awareness-end -->
 <!-- claude-code-memory-bank:begin -->

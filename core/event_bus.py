@@ -67,6 +67,12 @@ def emit_event(event: Dict[str, Any]) -> None:
         # Persistencia best-effort: no bloquear el pipeline por fallo de storage.
         pass
 
+    try:
+        from core.hestia.observer import hestia_observer
+        hestia_observer.observe(event)
+    except Exception:
+        pass
+
 
 def get_event(session_id: str) -> Dict[str, Any] | None:
     """Consume un evento de la cola de una sesión sin bloqueo."""

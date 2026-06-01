@@ -10,7 +10,6 @@ Commands: start [mode], status, test, reset
 """
 
 import click
-import os
 import subprocess
 from core.bootstrap.runtime import run
 from core.bootstrap.healthcheck import system_health
@@ -87,6 +86,30 @@ def test():
         print("❌ Some tests FAILED")
         print(result.stderr)
         raise click.ClickException("Tests failed")
+
+@cli.command()
+@click.option("--always-on", "always_on", is_flag=True, default=False,
+              help="Continuous listening: say 'Aletheia' to activate (no ENTER needed)")
+def voice(always_on: bool):
+    """Start Aletheia voice session (offline, no internet needed)."""
+    if always_on:
+        from core.voice.session import run_voice_session_always_on
+        run_voice_session_always_on()
+    else:
+        from core.voice.session import run_voice_session
+        run_voice_session()
+
+
+@cli.command()
+def voices():
+    """List available TTS voices on this system."""
+    from core.voice.speaker import list_voices as _list
+    available = _list()
+    if not available:
+        print("No se encontraron voces pyttsx3.")
+    for name in available:
+        print(f"  • {name}")
+
 
 @cli.command()
 def reset():

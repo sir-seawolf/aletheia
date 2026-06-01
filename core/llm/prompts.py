@@ -2,11 +2,6 @@ import json
 from typing import Dict, Any, Optional, List
 # Note: Full prompts from ai/prompts.py refactored here. For brevity, include key ones + _enrich.
 
-def _build_profile_instructions(profile: Optional[Dict[str, Any]]) -> str:
-    # Simplified version from ai/prompts.py
-    if not profile:
-        return ""
-    return "Adapt to user profile preferences."  # Expand as needed
 
 def _enrich(prompt: str, mem: List[Any] = None, palace: List[Any] = None) -> str:
     mem_str = json.dumps((mem[-5:] if mem else []), indent=2)
@@ -20,15 +15,21 @@ PALACE: {palace_str}
 Enrich this prompt with memory and palace context above."""
 
 def exploration_prompt(context: Dict[str, Any]) -> str:
-    profile_instructions = _build_profile_instructions(context.get("user_profile"))
-    return f"""Eres un analista frío.
+    profile_str = context.get("user_profile_str", "")
+    memory = context.get("memory", [])
+    profile_section = f"\nPerfil: {profile_str}" if profile_str else ""
+    mem_section = f"\nMemoria relevante: {memory[:3]}" if memory else ""
+
+    return f"""Extrae hechos y vacíos de información de esta entrada.
+
 Dominio: {context.get('domain', 'general')}
-Pregunta: {context.get('question', '')}
-Memoria: {context.get('memory', [])}
+Pregunta: {context.get('question', '')}{profile_section}{mem_section}
 
-{profile_instructions}
+Responde ÚNICAMENTE con este JSON (sin texto extra, sin markdown):
+{{"facts": ["hecho 1", "hecho 2"], "gaps": ["info faltante 1"], "confidence": 0.7}}
 
-JSON: {{"facts": [], "gaps": [], "confidence": 0.8}}"""
+Si no hay hechos concretos:
+{{"facts": ["Consulta exploratoria sin datos cuantitativos"], "gaps": ["Contexto específico no proporcionado"], "confidence": 0.5}}"""
 
 # Add other prompts as used (simulation_prompt, insight_prompt etc.)
 def simulation_prompt(context: Dict[str, Any]) -> str:

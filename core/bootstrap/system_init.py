@@ -3,8 +3,6 @@ System initialization for Aletheia Kernel v1.0.
 Loaded on startup: config, memory, LLM check, agent warmup.
 """
 
-import os
-from pathlib import Path
 from memory.service import retrieve_context_nodes  # test init
 from memory.storage import init_db  # assume exists or stub
 from ai.ollama_client import healthcheck  # will add
@@ -27,6 +25,38 @@ def init_system(mode: str = "DEV"):
         print(f"✅ Memory ready. Loaded {len(nodes)} test nodes.")
     except Exception as e:
         print(f"⚠️  Memory warning: {e}")
+
+    # 1b. Cognitive traces table (idempotent migration)
+    try:
+        from core.tracing.store import init_traces_table
+        init_traces_table()
+        print("✅ Cognitive traces table ready.")
+    except Exception as e:
+        print(f"⚠️  Traces table warning: {e}")
+
+    # 1c. Strategy degradation table
+    try:
+        from core.cognition.degradation import strategy_degradation
+        strategy_degradation._init()
+        print("✅ Strategy degradation table ready.")
+    except Exception as e:
+        print(f"⚠️  Degradation table warning: {e}")
+
+    # 1d. Cognitive replay table
+    try:
+        from core.tracing.replay import replay_store
+        replay_store._init()
+        print("✅ Cognitive replay table ready.")
+    except Exception as e:
+        print(f"⚠️  Replay table warning: {e}")
+
+    # 1e. Cognitive patterns table
+    try:
+        from core.cognition.pattern_detector import pattern_detector
+        pattern_detector._init()
+        print("✅ Cognitive patterns table ready.")
+    except Exception as e:
+        print(f"⚠️  Patterns table warning: {e}")
     
     # 2. LLM / Ollama
     try:

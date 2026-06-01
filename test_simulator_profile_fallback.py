@@ -7,7 +7,7 @@ incluso cuando Ollama NO está disponible (fallback estructurado).
 
 from types import SimpleNamespace
 from core.context import Context
-from agents.simulator import _build_scenario_description
+from core.pipeline.simulator import _build_scenario_description
 
 # Perfiles de prueba
 PROFILE_A = SimpleNamespace(

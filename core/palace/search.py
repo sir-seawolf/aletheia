@@ -56,7 +56,7 @@ class PalaceSearchEngine:
             score += 0.2
 
         # bonus por área relevante
-        if area.lower() in ["tecnoogia", "vida", "psique"]:
+        if area.lower() in ["tecnologia", "vida", "psique"]:
             score += 0.1
 
         # penalización por baja calidad previa

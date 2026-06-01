@@ -15,9 +15,9 @@ class OllamaProvider:
             "stream": False
         }
         try:
-            r = requests.post(f"{self.url}/api/generate", json=payload, timeout=120)
+            r = requests.post(f"{self.url}/api/generate", json=payload, timeout=90)
             r.raise_for_status()
             return r.json().get("response", "").strip()
         except Exception as e:
-            raise Exception(f"Ollama error: {str(e)}")
+            raise RuntimeError(f"Ollama error: {str(e)}") from e
 

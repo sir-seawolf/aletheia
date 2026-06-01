@@ -2,13 +2,13 @@
 Main orchestrator for Aletheia cognitive pipeline.
 
 STATUS: IMPLEMENTED (production v1.1)
-Dependencies: agents.*, core.aco.*, core.cel, core.llm.router, memory.service, core.palace, core.metrics.*
+Dependencies: core.pipeline.*, core.aco.*, core.cel, core.llm.router, memory.service, core.palace, core.metrics.*
 Last stable version: v1.2
 
 Pipeline: Profile extraction → Context → ACO middleware → CEL → Explorer → Simulator → Guardian → Palace attach → Contract
 """
 
-from agents import explorer, simulator, guardian
+from core.pipeline import explorer, simulator, guardian
 from core.palace import attach_to_palace
 from core.aco.middleware import apply_aco
 from core.aco.engine import CognitiveOptimizer
@@ -19,12 +19,13 @@ from core.aco.learning_layer import ACOLearningLayer
 from core.cel import cel
 from core.identity import user_profile as profile_module
 from time import time
+from core.event_bus import build_event, emit_event
 
 aco_optimizer = CognitiveOptimizer()
 aco_learning  = ACOLearningLayer()
 
 
-def process_request(domain: str, question: str) -> dict:
+def process_request(domain: str, question: str, session_id: str = "local") -> dict:
     """
     Execute full cognitive decision pipeline.
 
@@ -60,19 +61,36 @@ def process_request(domain: str, question: str) -> dict:
     # CEL: Cognitive Execution Layer
     cel.execute(domain, question)
 
-    # Run pipeline
+    # Run pipeline — all agents receive session_id for live event streaming
+    emit_event(build_event(session_id, "orchestrator", "start", "pipeline_start",
+                           {"domain": domain}, confidence=0.0))
+
     exploration = explorer.run(
         domain, question,
         policy=policy,
         memory=context_dict["memory"],
         user_profile_str=profile_str,
+        session_id=session_id,
     )
     llm_calls_explorer = exploration.get("llm_calls", 0)
+
+    emit_event(build_event(session_id, "simulator", "start", "simulation_start",
+                           {"facts_count": len(exploration.get("facts", []))},
+                           confidence=exploration.get("confidence", 0.5)))
 
     simulation = simulator.run(exploration, policy=policy)
     llm_calls_sim = simulation.get("llm_calls", 0)
 
+    emit_event(build_event(session_id, "guardian", "start", "validation_start",
+                           {"scenarios": len(simulation.get("scenarios", []))},
+                           confidence=simulation.get("confidence", 0.5)))
+
     validated = guardian.validate(simulation, policy=policy)
+
+    emit_event(build_event(session_id, "guardian", "done", "validation_done",
+                           {"block": validated.get("block", False),
+                            "issues": len(validated.get("issues", []))},
+                           confidence=validated.get("confidence_adjust", 0.9)))
 
     end_time = time()
 
